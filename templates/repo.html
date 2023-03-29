@@ -2,31 +2,14 @@
 
 {{ $repo := .RepoName }}
 
-{{ if .Repo.Meta.Title }}
-<h2>~/projects/{{ .Repo.Meta.Title }}</h2>
-{{ else }}
-<h2>~/projects/{{ .RepoName }}</h2>
-{{ end }}
+<h2>~/projects/{{ $repo }}</h2>
 
-<code>
-~$ git clone https://{{ .Site.Host }}/git/{{ $repo }}
-</code>
-
-<ul class="navbar-nav">
-  <li class="nav-item active">
-    <a class="nav-link" href="/{{ $repo }}">About</a>
-  </li>
-  <li class="nav-item">
-    <a class="nav-link" href="/{{ $repo }}/refs">Refs</a>
-  </li>
-  <li class="nav-item">
-    <a class="nav-link" href="/{{ $repo }}/log">Log</a>
-  </li>
-  <li class="nav-item">
-    <a class="nav-link" href="/{{ $repo }}/tree">Tree</a>
-  </li>
-</ul>
-
+<nav>
+  <a class="nav-link" href="/{{ $repo }}">About</a>
+  <a class="nav-link" href="/{{ $repo }}/refs">Refs</a>
+  <a class="nav-link" href="/{{ $repo }}/log">Log</a>
+  <a class="nav-link" href="/{{ $repo }}/tree">Tree</a>
+</nav>
 
 <div class="readme">
   {{ .Readme }}

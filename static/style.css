@@ -1,7 +1,11 @@
 @import "https://lsong.org/css/stylesheet.css";
 @import "https://lsong.org/stylesheets/table.css";
 
+.chroma {
+  width: 100%;
+  overflow: scroll;
+}
 
-table {
+.table {
   width: 100%;
 }
