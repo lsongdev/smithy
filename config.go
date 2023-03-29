@@ -17,55 +17,46 @@
 package main
 
 import (
-	"io/ioutil"
+	"os"
 	"path"
-	"path/filepath"
 	"sort"
 
 	"github.com/go-git/go-git/v5"
-	"gopkg.in/yaml.v2"
 )
 
-type RepoConfig struct {
-	Path        string
-	Slug        string
-	Title       string
-	Description string
-	Exclude     bool
-}
+// type RepoConfig struct {
+// 	Path        string
+// 	Slug        string
+// 	Title       string
+// 	Description string
+// 	Exclude     bool
+// }
 
 type GitConfig struct {
-	Root  string       `yaml:"root"`
-	Repos []RepoConfig `yaml:",omitempty"`
-
+	Root string `yaml:"root"`
+	// Repos []RepoConfig `yaml:",omitempty"`
 	// ReposBySlug is an extrapolaed value
 	reposBySlug map[string]RepositoryWithName
 
 	// staticReposBySlug is a map of the `repos` values
-	staticReposBySlug map[string]RepoConfig
-}
-
-type StaticConfig struct {
-	Root   string
-	Prefix string
+	// staticReposBySlug map[string]RepoConfig
 }
 
 type SmithyConfig struct {
 	Title       string `yaml:"title"`
 	Description string `yaml:"description"`
 	Host        string `yaml:"host"`
+	Port        int    `yaml:"port"`
 	Git         GitConfig
-	Static      StaticConfig
 	Templates   struct {
 		Dir string
 	}
-	Port int `yaml:"port"`
 }
 
-func (sc *SmithyConfig) findStaticRepo(slug string) (RepoConfig, bool) {
-	value, exists := sc.Git.staticReposBySlug[slug]
-	return value, exists
-}
+// func (sc *SmithyConfig) findStaticRepo(slug string) (RepoConfig, bool) {
+// 	value, exists := sc.Git.staticReposBySlug[slug]
+// 	return value, exists
+// }
 
 func (sc *SmithyConfig) FindRepo(slug string) (RepositoryWithName, bool) {
 	value, exists := sc.Git.reposBySlug[slug]
@@ -74,113 +65,31 @@ func (sc *SmithyConfig) FindRepo(slug string) (RepositoryWithName, bool) {
 
 func (sc *SmithyConfig) GetRepositories() []RepositoryWithName {
 	var repos []RepositoryWithName
-
 	for _, repo := range sc.Git.reposBySlug {
 		repos = append(repos, repo)
 	}
-
 	sort.Sort(RepositoryByName(repos))
 	return repos
 }
 
 func (sc *SmithyConfig) LoadAllRepositories() error {
-	sc.Git.staticReposBySlug = make(map[string]RepoConfig)
-
-	for _, repo := range sc.Git.Repos {
-		k := repo.Path
-		if repo.Slug != "" {
-			k = repo.Slug
-		}
-		sc.Git.staticReposBySlug[k] = repo
-	}
-
-	repos, err := ioutil.ReadDir(sc.Git.Root)
-
+	files, err := os.ReadDir(sc.Git.Root)
 	if err != nil {
 		return err
 	}
-
-	// TODO: should we clear out or not?
 	sc.Git.reposBySlug = make(map[string]RepositoryWithName)
-
-	for _, repo := range repos {
-		repoObj, exists := sc.findStaticRepo(repo.Name())
-
-		if exists == true && repoObj.Exclude == true {
-			continue
-		}
-
-		repoPath := path.Join(sc.Git.Root, repo.Name())
-
+	for _, f := range files {
+		repoPath := path.Join(sc.Git.Root, f.Name())
 		r, err := git.PlainOpen(repoPath)
 		if err != nil {
 			// Ignore directories that aren't git repositories
 			continue
 		}
-
-		rwn := RepositoryWithName{Name: repo.Name(), Repository: r}
-		key := repo.Name()
-
-		if exists {
-			rwn.Meta = repoObj
-			rwn.Name = repoObj.Title
-
-			if repoObj.Slug != "" {
-				key = repoObj.Slug
-			}
-		}
-
-		sc.Git.reposBySlug[key] = rwn
-
-	}
-
-	for _, repo := range sc.Git.Repos {
-		if repo.Exclude == true {
-			continue
-		}
-
-		if !filepath.IsAbs(repo.Path) {
-			continue
-		}
-
-		r, err := git.PlainOpen(repo.Path)
-		if err != nil {
-			// Ignore directories that aren't git repositories
-			continue
-		}
-		rwn := RepositoryWithName{Name: repo.Title, Repository: r, Meta: repo}
-		key := repo.Path
-		if repo.Slug != "" {
-			key = repo.Slug
-		}
-
+		key := f.Name()
+		rwn := RepositoryWithName{Name: f.Name(), Repository: r}
 		sc.Git.reposBySlug[key] = rwn
 	}
-
 	return nil
-
-}
-
-func LoadConfig(path string) (SmithyConfig, error) {
-	var smithyConfig SmithyConfig
-
-	if path == "" {
-		path = "config.yaml"
-	}
-
-	contents, err := ioutil.ReadFile(path)
-
-	if err != nil {
-		return smithyConfig, err
-	}
-
-	err = yaml.Unmarshal(contents, &smithyConfig)
-
-	if err != nil {
-		return smithyConfig, err
-	}
-
-	return smithyConfig, nil
 }
 
 func NewConfig() SmithyConfig {
@@ -191,9 +100,6 @@ func NewConfig() SmithyConfig {
 		Host:        "localhost",
 		Git: GitConfig{
 			Root: "/Users/Lsong/Projects",
-		},
-		Static: StaticConfig{
-			Prefix: "/static/",
 		},
 	}
 }

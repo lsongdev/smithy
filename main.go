@@ -16,6 +16,33 @@
 
 package main
 
+import (
+	"fmt"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
+
 func main() {
-	StartServer()
+	config := NewConfig()
+	app := gin.Default()
+	err := config.LoadAllRepositories()
+	templ, err := loadTemplates(config)
+	if err != nil {
+		fmt.Println("Failed to load templates:", err)
+		return
+	}
+	app.SetHTMLTemplate(templ)
+	app.Use(AddConfigMiddleware(config))
+	routes := CompileRoutes()
+	app.Any("*path", func(ctx *gin.Context) {
+		Dispatch(ctx, routes, http.FileServer(http.FS(staticfiles)))
+	})
+
+	err = app.Run(":" + fmt.Sprint(config.Port))
+
+	if err != nil {
+		fmt.Println("ERROR:", err, config.Port)
+	}
+	return
 }

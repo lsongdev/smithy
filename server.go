@@ -1,19 +1,3 @@
-// smithy --- the git forge
-// Copyright (C) 2020   Honza Pokorny <honza@pokorny.ca>
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 package main
 
 import (
@@ -59,7 +43,25 @@ const PAGE_SIZE int = 100
 type RepositoryWithName struct {
 	Name       string
 	Repository *git.Repository
-	Meta       RepoConfig
+	// Meta       RepoConfig
+}
+
+type RepositoryByName []RepositoryWithName
+
+func (r RepositoryByName) Len() int      { return len(r) }
+func (r RepositoryByName) Swap(i, j int) { r[i], r[j] = r[j], r[i] }
+func (r RepositoryByName) Less(i, j int) bool {
+	res := strings.Compare(r[i].Name, r[j].Name)
+	return res < 0
+}
+
+type ReferenceByName []*plumbing.Reference
+
+func (r ReferenceByName) Len() int      { return len(r) }
+func (r ReferenceByName) Swap(i, j int) { r[i], r[j] = r[j], r[i] }
+func (r ReferenceByName) Less(i, j int) bool {
+	res := strings.Compare(r[i].Name().String(), r[j].Name().String())
+	return res < 0
 }
 
 type Commit struct {
@@ -105,24 +107,6 @@ func ConvertTreeEntries(entries []object.TreeEntry) []TreeEntry {
 	}
 
 	return results
-}
-
-type RepositoryByName []RepositoryWithName
-
-func (r RepositoryByName) Len() int      { return len(r) }
-func (r RepositoryByName) Swap(i, j int) { r[i], r[j] = r[j], r[i] }
-func (r RepositoryByName) Less(i, j int) bool {
-	res := strings.Compare(r[i].Name, r[j].Name)
-	return res < 0
-}
-
-type ReferenceByName []*plumbing.Reference
-
-func (r ReferenceByName) Len() int      { return len(r) }
-func (r ReferenceByName) Swap(i, j int) { r[i], r[j] = r[j], r[i] }
-func (r ReferenceByName) Less(i, j int) bool {
-	res := strings.Compare(r[i].Name().String(), r[j].Name().String())
-	return res < 0
 }
 
 func PathExists(path string) (bool, error) {
@@ -868,25 +852,9 @@ func CompileRoutes() []Route {
 	}
 }
 
-func InitFileSystemHandler(smithyConfig SmithyConfig) http.Handler {
-	var handler http.Handler
-
-	if smithyConfig.Static.Root == "" {
-		handler = http.FileServer(http.FS(staticfiles))
-	} else {
-		handler = http.FileServer(http.Dir(smithyConfig.Static.Root))
-		handler = http.StripPrefix(smithyConfig.Static.Prefix, handler)
-	}
-
-	return handler
-}
-
 func Dispatch(ctx *gin.Context, routes []Route, fileSystemHandler http.Handler) {
 	urlPath := ctx.Request.URL.String()
-
-	smithyConfig := ctx.MustGet("config").(SmithyConfig)
-
-	if strings.HasPrefix(urlPath, smithyConfig.Static.Prefix) {
+	if strings.HasPrefix(urlPath, "/static/") {
 		fileSystemHandler.ServeHTTP(ctx.Writer, ctx.Request)
 		return
 	}
@@ -915,12 +883,10 @@ func Dispatch(ctx *gin.Context, routes []Route, fileSystemHandler http.Handler) 
 
 func loadTemplates(smithyConfig SmithyConfig) (*template.Template, error) {
 
-	cssPath := smithyConfig.Static.Prefix + "style.css"
-
 	funcs := template.FuncMap{
-		"css": func() string {
-			return cssPath
-		},
+		// "css": func() string {
+		// 	return cssPath
+		// },
 	}
 
 	t := template.New("").Funcs(funcs)
@@ -959,31 +925,4 @@ func loadTemplates(smithyConfig SmithyConfig) (*template.Template, error) {
 	}
 
 	return t, nil
-}
-
-func StartServer() (err error) {
-	config := NewConfig()
-	router := gin.Default()
-	err = config.LoadAllRepositories()
-	templ, err := loadTemplates(config)
-	if err != nil {
-		fmt.Println("Failed to load templates:", err)
-		return
-	}
-	router.SetHTMLTemplate(templ)
-	router.Use(AddConfigMiddleware(config))
-
-	fileSystemHandler := InitFileSystemHandler(config)
-
-	routes := CompileRoutes()
-	router.Any("*path", func(ctx *gin.Context) {
-		Dispatch(ctx, routes, fileSystemHandler)
-	})
-
-	err = router.Run(":" + fmt.Sprint(config.Port))
-
-	if err != nil {
-		fmt.Println("ERROR:", err, config.Port)
-	}
-	return
 }

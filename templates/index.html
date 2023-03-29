@@ -5,12 +5,7 @@
 <ul>
   {{range .Repos}}
   <li>
-    {{ if .Meta.Slug }}
-    <a href="/{{ .Meta.Slug }}">{{ .Name }}</a>
-    <p>{{ .Meta.Description }}</p>
-    {{ else }}
     <a href="/{{ .Name }}">{{ .Name }}</a>
-    {{ end }}
   </li>
   {{ end }}
 </ul>
