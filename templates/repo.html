@@ -1,0 +1,11 @@
+{{ template "header" . }}
+
+{{ $repo := .RepoName }}
+
+{{ template "nav" . }}
+
+<div class="readme">
+  {{ .Readme }}
+</div>
+
+{{ template "footer" }}

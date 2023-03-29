@@ -1,0 +1,26 @@
+{{ template "header" . }}
+
+
+{{ $repo := .RepoName }}
+{{ $subtree := .SubTree }}
+{{ $ref := .RefName }}
+
+{{ template "nav" . }}
+
+<h3>Blob</h3>
+
+<dl>
+  <dt>ref</dt>
+  <dd><a href="/{{ $repo }}/commit/{{ $ref }}">{{ .RefName }}</a></dd>
+
+  <dt>path</dt>
+  <dd><a href="/{{ $repo }}/tree/{{ $ref }}/{{ .ParentPath }}">{{ .ParentPath }}</a>/<a href="">{{ .File.Name }}</a></dd>
+</dl>
+
+<hr>
+
+<pre>
+{{ .Contents }}
+</pre>
+
+{{ template "footer" }}

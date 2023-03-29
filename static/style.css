@@ -1,0 +1,16 @@
+@import "https://lsong.org/css/stylesheet.css";
+@import "https://lsong.org/stylesheets/table.css";
+
+.chroma {
+  width: 100%;
+  overflow: scroll;
+}
+
+.table {
+  width: 100%;
+}
+
+pre {
+  width: 100%;
+  overflow: scroll;
+}
