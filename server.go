@@ -23,6 +23,7 @@ import (
 	"html/template"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -295,30 +296,37 @@ func RepoIndexView(ctx *gin.Context, urlParts []string) {
 
 	var formattedReadme string
 
-	_, revision, err := findMainBranch(ctx, repo.Repository)
+	main, revision, err := findMainBranch(ctx, repo.Repository)
 
-	if err == nil {
-		commitObj, err := repo.Repository.CommitObject(*revision)
+	log.Println("findMainBranch", main, revision)
 
-		if err == nil {
+	if err != nil {
+		Http500(ctx)
+		return
+	}
 
-			readme, err := GetReadmeFromCommit(commitObj)
+	commitObj, err := repo.Repository.CommitObject(*revision)
 
-			if err != nil {
-				formattedReadme = ""
-			} else {
-				readmeContents, err := readme.Contents()
+	if err != nil {
+		Http500(ctx)
+		return
+	}
 
-				if err != nil {
-					formattedReadme = ""
-				} else {
-					formattedReadme = FormatMarkdown(readmeContents)
-				}
-			}
+	readme, err := GetReadmeFromCommit(commitObj)
+
+	if err != nil {
+		formattedReadme = ""
+	} else {
+		readmeContents, err := readme.Contents()
+
+		if err != nil {
+			formattedReadme = ""
+		} else {
+			formattedReadme = FormatMarkdown(readmeContents)
 		}
 	}
 
-	ctx.HTML(http.StatusOK, "repo-index.html", makeTemplateContext(smithyConfig, gin.H{
+	ctx.HTML(http.StatusOK, "repo.html", makeTemplateContext(smithyConfig, gin.H{
 		"RepoName": repoName,
 		"Branches": bs,
 		"Tags":     ts,
@@ -686,6 +694,10 @@ func PatchView(ctx *gin.Context, urlParts []string) {
 		}
 
 		patchObj, err := parentCommit.Patch(commitObj)
+		if err != nil {
+			Http500(ctx)
+			return
+		}
 		patch = patchObj.String()
 	}
 
