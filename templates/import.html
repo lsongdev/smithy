@@ -1,0 +1,28 @@
+{{ template "header" . }}
+<h2>Import Project</h2>
+
+<nav>
+    <a href="/">Home</a>
+    <a href="/new">New</a>
+    <a href="/import">Import</a>
+</nav>
+
+<form method="post" action="/import" >
+    <div class="form-field">
+        <label for="name">Name:</label>
+        <input type="text" name="name" class="input">
+    </div>
+    <div class="form-field">
+        <label for="url">Git URL:</label>
+        <input type="text" name="git" class="input">
+    </div>
+    <div class="form-field">
+        <label for="bare">Bare?</label>
+        <input type="checkbox" name="bare" checked="checked" >
+    </div>
+    <div class="form-field">
+        <button class="button button-primary" >Import</button>
+    </div>
+</form>
+
+{{ template "footer" . }}

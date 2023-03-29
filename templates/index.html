@@ -1,0 +1,19 @@
+{{ template "header" . }}
+
+<h2>~/Projects</h2>
+
+<nav>
+  <a href="/">Home</a>
+  <a href="/new">New</a>
+  <a href="/import">Import</a>
+</nav>
+
+<ul>
+  {{range .Repos}}
+  <li>
+    <a href="/{{ .Name }}">{{ .Name }}</a>
+  </li>
+  {{ end }}
+</ul>
+
+{{ template "footer" }}
