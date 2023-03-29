@@ -1,0 +1,26 @@
+{{ template "header" . }}
+
+{{ $repo := .RepoName }}
+
+<h2>~/Projects/{{ $repo }}</h2>
+<nav>
+  <a class="nav-link" href="/{{ $repo }}">About</a>
+  <a class="nav-link" href="/{{ $repo }}/refs">Refs</a>
+  <a class="nav-link" href="/{{ $repo }}/log">Log</a>
+  <a class="nav-link" href="/{{ $repo }}/tree">Tree</a>
+  <a class="nav-link" href="/{{ $repo }}/tree/{{ .Commit.Hash }}">Browse</a>
+  <a class="nav-link" href="/{{ $repo }}/patch/{{ .Commit.Hash }}">Patch</a>
+</nav>
+
+<h3>Commit</h3>
+
+<p>id: {{ .Commit.Hash }}</p>
+<p>author: {{ .Commit.Author.Name }} <{{ .Commit.Author.Email }}></p>
+<p><pre>{{ .Commit.Message }}</pre></p>
+<p><pre>{{ .Commit.Stats }}</pre></p>
+<hr>
+<div>
+  <pre>{{ .Changes }}</pre>
+</div>
+
+{{ template "footer" }}

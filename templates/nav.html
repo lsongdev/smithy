@@ -1,0 +1,11 @@
+{{ define "nav" }}
+{{ $repo := .RepoName }}
+
+<h2>~/Projects/{{ $repo }}</h2>
+<nav>
+  <a class="nav-link" href="/{{ $repo }}">About</a>
+  <a class="nav-link" href="/{{ $repo }}/refs">Refs</a>
+  <a class="nav-link" href="/{{ $repo }}/log">Log</a>
+  <a class="nav-link" href="/{{ $repo }}/tree">Tree</a>
+</nav>
+{{end}}
