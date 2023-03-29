@@ -1,0 +1,30 @@
+{{ template "header" . }}
+
+{{ $repo := .RepoName }}
+
+{{ template "nav" . }}
+
+<h3>Branches</h3>
+<table class="table table-striped">
+  {{ range .Branches }}
+  <tr>
+    <td style="width: 50%;">{{ .Name.Short }}</td>
+    <td><a href="/{{ $repo }}/log/{{ .Name.Short }}">log</a></td>
+    <td><a href="/{{ $repo }}/tree/{{ .Name.Short }}">tree</a></td>
+  </tr>
+  {{ end }}
+</table>
+
+<h3>Tags</h3>
+
+<table class="table table-striped">
+  {{ range .Tags }}
+  <tr>
+    <td style="width: 50%;" >{{ .Name.Short }}</td>
+    <td><a href="/{{ $repo }}/log/{{ .Name.Short }}">log</a></td>
+    <td><a href="/{{ $repo }}/tree/{{ .Name.Short }}">tree</a></td>
+  </tr>
+  {{ end }}
+</table>
+
+{{ template "footer" }}
