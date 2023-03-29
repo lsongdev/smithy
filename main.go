@@ -18,6 +18,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -29,7 +30,7 @@ func main() {
 	err := config.LoadAllRepositories()
 	templ, err := loadTemplates(config)
 	if err != nil {
-		fmt.Println("Failed to load templates:", err)
+		log.Fatal("Failed to load templates:", err)
 		return
 	}
 	app.SetHTMLTemplate(templ)
@@ -38,11 +39,9 @@ func main() {
 	app.Any("*path", func(ctx *gin.Context) {
 		Dispatch(ctx, routes, http.FileServer(http.FS(staticfiles)))
 	})
-
 	err = app.Run(":" + fmt.Sprint(config.Port))
-
 	if err != nil {
-		fmt.Println("ERROR:", err, config.Port)
+		log.Fatal("ERROR:", err, config.Port)
 	}
 	return
 }

@@ -9,7 +9,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -74,25 +73,40 @@ func (c *Commit) FormattedDate() string {
 	// return c.Commit.Author.When.Format(time.RFC822)
 }
 
-func PathExists(path string) (bool, error) {
-	_, err := os.Stat(path)
-	if err == nil {
-		return true, nil
+func ReferenceCollector(it storer.ReferenceIter) ([]*plumbing.Reference, error) {
+	var refs []*plumbing.Reference
+
+	for {
+		b, err := it.Next()
+
+		if err == io.EOF {
+			break
+		}
+
+		if err != nil {
+			return refs, err
+		}
+
+		refs = append(refs, b)
 	}
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	return false, err
+	sort.Sort(ReferenceByName(refs))
+	return refs, nil
 }
 
-func DefaultParam(ctx *gin.Context, key, def string) string {
-	p := ctx.Param(key)
-
-	if p != "" {
-		return p
+func ListBranches(r *git.Repository) ([]*plumbing.Reference, error) {
+	it, err := r.Branches()
+	if err != nil {
+		return []*plumbing.Reference{}, err
 	}
+	return ReferenceCollector(it)
+}
 
-	return def
+func ListTags(r *git.Repository) ([]*plumbing.Reference, error) {
+	it, err := r.Tags()
+	if err != nil {
+		return []*plumbing.Reference{}, err
+	}
+	return ReferenceCollector(it)
 }
 
 func GetReadmeFromCommit(commit *object.Commit) (*object.File, error) {
@@ -111,9 +125,7 @@ func GetReadmeFromCommit(commit *object.Commit) (*object.File, error) {
 		if err == nil {
 			return f, nil
 		}
-
 	}
-
 	return nil, errors.New("no valid readme")
 }
 
@@ -381,7 +393,6 @@ func TreeView(ctx *gin.Context, urlParts []string) {
 	}
 
 	out, err := tree.FindEntry(treePath)
-
 	if err != nil {
 		Http404(ctx)
 		return
@@ -406,16 +417,13 @@ func TreeView(ctx *gin.Context, urlParts []string) {
 	}
 
 	// Now do a regular file
-
 	file, err := tree.File(treePath)
 	if err != nil {
 		Http404(ctx)
 		return
 	}
 	contents, err := file.Contents()
-
 	syntaxHighlighted, _ := RenderSyntaxHighlighting(file)
-
 	if err != nil {
 		Http404(ctx)
 		return
@@ -435,7 +443,6 @@ func LogView(ctx *gin.Context, urlParts []string) {
 	repoName := urlParts[0]
 	smithyConfig := ctx.MustGet("config").(SmithyConfig)
 	repo, exists := smithyConfig.FindRepo(repoName)
-
 	if !exists {
 		Http404(ctx)
 		return
@@ -443,7 +450,6 @@ func LogView(ctx *gin.Context, urlParts []string) {
 
 	refNameString := urlParts[1]
 	revision, err := repo.Repository.ResolveRevision(plumbing.Revision(refNameString))
-
 	if err != nil {
 		Http404(ctx)
 		return
@@ -451,7 +457,6 @@ func LogView(ctx *gin.Context, urlParts []string) {
 
 	var commits []Commit
 	cIter, err := repo.Repository.Log(&git.LogOptions{From: *revision, Order: git.LogOrderCommitterTime})
-
 	if err != nil {
 		Http500(ctx)
 		return
@@ -485,7 +490,6 @@ func LogViewDefault(ctx *gin.Context, urlParts []string) {
 	repoName := urlParts[0]
 	smithyConfig := ctx.MustGet("config").(SmithyConfig)
 	repo, exists := smithyConfig.FindRepo(repoName)
-
 	if !exists {
 		Http404(ctx)
 		return
@@ -508,14 +512,12 @@ func GetChanges(commit *object.Commit) (object.Changes, error) {
 	parent, err := commit.Parent(0)
 	if err == nil {
 		parentTree, err = parent.Tree()
-
 		if err != nil {
 			return changes, err
 		}
 	}
 
 	currentTree, err := commit.Tree()
-
 	if err != nil {
 		return changes, err
 	}
@@ -543,7 +545,6 @@ func PatchView(ctx *gin.Context, urlParts []string) {
 	repoName := urlParts[0]
 	smithyConfig := ctx.MustGet("config").(SmithyConfig)
 	repo, exists := smithyConfig.FindRepo(repoName)
-
 	if !exists {
 		Http404(ctx)
 		return
@@ -558,7 +559,6 @@ func PatchView(ctx *gin.Context, urlParts []string) {
 
 	commitHash := plumbing.NewHash(commitID)
 	commitObj, err := repo.Repository.CommitObject(commitHash)
-
 	if err != nil {
 		Http404(ctx)
 		return
@@ -605,7 +605,6 @@ func CommitView(ctx *gin.Context, urlParts []string) {
 	repoName := urlParts[0]
 	smithyConfig := ctx.MustGet("config").(SmithyConfig)
 	repo, exists := smithyConfig.FindRepo(repoName)
-
 	if !exists {
 		Http404(ctx)
 		return
@@ -618,21 +617,18 @@ func CommitView(ctx *gin.Context, urlParts []string) {
 	}
 	commitHash := plumbing.NewHash(commitID)
 	commitObj, err := repo.Repository.CommitObject(commitHash)
-
 	if err != nil {
 		Http404(ctx)
 		return
 	}
 
 	changes, err := GetChanges(commitObj)
-
 	if err != nil {
 		Http404(ctx)
 		return
 	}
 
 	formattedChanges, err := FormatChanges(changes)
-
 	if err != nil {
 		Http404(ctx)
 		return
@@ -643,45 +639,6 @@ func CommitView(ctx *gin.Context, urlParts []string) {
 		"Commit":   commitObj,
 		"Changes":  template.HTML(formattedChanges),
 	}))
-}
-
-func ListBranches(r *git.Repository) ([]*plumbing.Reference, error) {
-	it, err := r.Branches()
-	if err != nil {
-		return []*plumbing.Reference{}, err
-	}
-
-	return ReferenceCollector(it)
-}
-
-func ListTags(r *git.Repository) ([]*plumbing.Reference, error) {
-	it, err := r.Tags()
-	if err != nil {
-		return []*plumbing.Reference{}, err
-	}
-
-	return ReferenceCollector(it)
-}
-
-func ReferenceCollector(it storer.ReferenceIter) ([]*plumbing.Reference, error) {
-	var refs []*plumbing.Reference
-
-	for {
-		b, err := it.Next()
-
-		if err == io.EOF {
-			break
-		}
-
-		if err != nil {
-			return refs, err
-		}
-
-		refs = append(refs, b)
-	}
-
-	sort.Sort(ReferenceByName(refs))
-	return refs, nil
 }
 
 // Make the config available to every request
@@ -753,7 +710,6 @@ func Dispatch(ctx *gin.Context, routes []Route, fileSystemHandler http.Handler) 
 		}
 
 		urlParts := []string{}
-
 		for i, match := range route.Pattern.FindStringSubmatch(urlPath) {
 			if i != 0 {
 				urlParts = append(urlParts, match)
@@ -776,18 +732,8 @@ func loadTemplates(smithyConfig SmithyConfig) (*template.Template, error) {
 		// 	return cssPath
 		// },
 	}
-
 	t := template.New("").Funcs(funcs)
-
-	if smithyConfig.Templates.Dir != "" {
-		if !strings.HasSuffix(smithyConfig.Templates.Dir, "*") {
-			smithyConfig.Templates.Dir += "/*"
-		}
-		return t.ParseGlob(smithyConfig.Templates.Dir)
-	}
-
 	files, err := templatefiles.ReadDir("templates")
-
 	if err != nil {
 		return t, err
 	}
@@ -811,6 +757,5 @@ func loadTemplates(smithyConfig SmithyConfig) (*template.Template, error) {
 		}
 
 	}
-
 	return t, nil
 }
