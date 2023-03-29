@@ -140,13 +140,10 @@ func FormatMarkdown(input string) string {
 			),
 		),
 	)
-
 	if err := markdown.Convert([]byte(input), &buf); err != nil {
-		panic(err)
+		return input
 	}
-
 	return buf.String()
-
 }
 
 func RenderSyntaxHighlighting(file *object.File) (string, error) {

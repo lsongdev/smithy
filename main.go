@@ -17,15 +17,24 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"path"
 
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
+	home, _ := os.UserHomeDir()
+	root := path.Join(home, "Projects")
+	flag.StringVar(&root, "root", root, "repos root dir")
+	flag.Parse()
+
 	config := NewConfig()
+	config.Git.Root = root
 	app := gin.Default()
 	err := config.LoadAllRepositories()
 	templ, err := loadTemplates(config)

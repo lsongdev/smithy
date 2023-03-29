@@ -99,7 +99,7 @@ func NewConfig() SmithyConfig {
 		Port:        3456,
 		Host:        "localhost",
 		Git: GitConfig{
-			Root: "/Users/Lsong/Projects",
+			Root: "",
 		},
 	}
 }
