@@ -12,7 +12,9 @@
   <a class="nav-link" href="/{{ $repo }}/tree/{{ .Commit.Hash }}">Browse</a>
 </nav>
 
-<p>commit {{ .Commit.Hash }}</p>
+<h3>Commit</h3>
+
+<p>id: {{ .Commit.Hash }}</p>
 <p>author: {{ .Commit.Author.Name }} <{{ .Commit.Author.Email }}></p>
 <p><pre>{{ .Commit.Message }}</pre></p>
 <p><pre>{{ .Commit.Stats }}</pre></p>

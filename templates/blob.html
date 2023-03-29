@@ -15,8 +15,10 @@
 {{ $subtree := .SubTree }}
 {{ $ref := .RefName }}
 
+<h3>Blob</h3>
+
 <p>Ref: {{ $ref }}</p>
-<p><a href="/{{ $repo }}/tree/{{ $ref }}/{{ .ParentPath }}">{{ .ParentPath }}</a>/{{ .File.Name }}</p>
+<p>Path: <a href="/{{ $repo }}/tree/{{ $ref }}/{{ .ParentPath }}">{{ .ParentPath }}</a>/{{ .File.Name }}</p>
 
 <hr>
 
