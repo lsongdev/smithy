@@ -21,7 +21,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/yuin/goldmark"
@@ -73,40 +72,6 @@ type Commit struct {
 func (c *Commit) FormattedDate() string {
 	return c.Commit.Author.When.Format("2006-01-02")
 	// return c.Commit.Author.When.Format(time.RFC822)
-}
-
-type TreeEntry struct {
-	Name string
-	Mode filemode.FileMode
-	Hash plumbing.Hash
-}
-
-func (te *TreeEntry) FileMode() string {
-	osFile, err := te.Mode.ToOSFileMode()
-	if err != nil {
-		return ""
-	}
-
-	if osFile.IsDir() {
-		return "d---------"
-	}
-
-	return osFile.String()
-}
-
-func ConvertTreeEntries(entries []object.TreeEntry) []TreeEntry {
-	var results []TreeEntry
-
-	for _, entry := range entries {
-		e := TreeEntry{
-			Name: entry.Name,
-			Mode: entry.Mode,
-			Hash: entry.Hash,
-		}
-		results = append(results, e)
-	}
-
-	return results
 }
 
 func PathExists(path string) (bool, error) {
@@ -257,7 +222,6 @@ func findMainBranch(ctx *gin.Context, repo *git.Repository) (string, *plumbing.H
 func RepoIndexView(ctx *gin.Context, urlParts []string) {
 	repoName := urlParts[0]
 	smithyConfig := ctx.MustGet("config").(SmithyConfig)
-
 	repo, exists := smithyConfig.FindRepo(repoName)
 
 	if !exists {
@@ -265,14 +229,14 @@ func RepoIndexView(ctx *gin.Context, urlParts []string) {
 		return
 	}
 
-	bs, err := ListBranches(repo.Repository)
+	branches, err := ListBranches(repo.Repository)
 
 	if err != nil {
 		Http500(ctx)
 		return
 	}
 
-	ts, err := ListTags(repo.Repository)
+	tags, err := ListTags(repo.Repository)
 	if err != nil {
 		Http500(ctx)
 		return
@@ -312,8 +276,8 @@ func RepoIndexView(ctx *gin.Context, urlParts []string) {
 
 	ctx.HTML(http.StatusOK, "repo.html", makeTemplateContext(smithyConfig, gin.H{
 		"RepoName": repoName,
-		"Branches": bs,
-		"Tags":     ts,
+		"Branches": branches,
+		"Tags":     tags,
 		"Readme":   template.HTML(formattedReadme),
 		"Repo":     repo,
 	}))
@@ -328,75 +292,48 @@ func RepoGitView(ctx *gin.Context, urlParts []string) {
 func RefsView(ctx *gin.Context, urlParts []string) {
 	repoName := urlParts[0]
 	smithyConfig := ctx.MustGet("config").(SmithyConfig)
-	repoPath := filepath.Join(smithyConfig.Git.Root, repoName)
+	repo, exists := smithyConfig.FindRepo(repoName)
 
-	repoPathExists, err := PathExists(repoPath)
-
-	if err != nil {
+	if !exists {
 		Http404(ctx)
 		return
 	}
 
-	if !repoPathExists {
-		Http404(ctx)
-		return
-	}
-
-	r, err := git.PlainOpen(repoPath)
+	branches, err := ListBranches(repo.Repository)
 
 	if err != nil {
-		Http500(ctx)
-		return
+		branches = []*plumbing.Reference{}
 	}
 
-	bs, err := ListBranches(r)
-
+	tags, err := ListTags(repo.Repository)
 	if err != nil {
-		bs = []*plumbing.Reference{}
-	}
-
-	ts, err := ListTags(r)
-	if err != nil {
-		ts = []*plumbing.Reference{}
+		tags = []*plumbing.Reference{}
 	}
 
 	ctx.HTML(http.StatusOK, "refs.html", makeTemplateContext(smithyConfig, gin.H{
 		"RepoName": repoName,
-		"Branches": bs,
-		"Tags":     ts,
+		"Branches": branches,
+		"Tags":     tags,
 	}))
 }
 
 func TreeView(ctx *gin.Context, urlParts []string) {
 	repoName := urlParts[0]
 	smithyConfig := ctx.MustGet("config").(SmithyConfig)
-	repoPath := filepath.Join(smithyConfig.Git.Root, repoName)
+	repo, exists := smithyConfig.FindRepo(repoName)
 
-	repoPathExists, err := PathExists(repoPath)
-
-	if err != nil {
+	if !exists {
 		Http404(ctx)
 		return
 	}
 
-	if !repoPathExists {
-		Http404(ctx)
-		return
-	}
-
-	r, err := git.PlainOpen(repoPath)
-
-	if err != nil {
-		Http404(ctx)
-		return
-	}
-
+	var err error
 	var refNameString string
 
 	if len(urlParts) > 1 {
 		refNameString = urlParts[1]
 	} else {
-		refNameString, _, err = findMainBranch(ctx, r)
+		refNameString, _, err = findMainBranch(ctx, repo.Repository)
 		if err != nil {
 			ctx.Error(err)
 			Http404(ctx)
@@ -404,7 +341,7 @@ func TreeView(ctx *gin.Context, urlParts []string) {
 		}
 	}
 
-	revision, err := r.ResolveRevision(plumbing.Revision(refNameString))
+	revision, err := repo.Repository.ResolveRevision(plumbing.Revision(refNameString))
 
 	if err != nil {
 		Http404(ctx)
@@ -418,7 +355,7 @@ func TreeView(ctx *gin.Context, urlParts []string) {
 	}
 
 	parentPath := filepath.Dir(treePath)
-	commitObj, err := r.CommitObject(*revision)
+	commitObj, err := repo.Repository.CommitObject(*revision)
 
 	if err != nil {
 		Http404(ctx)
@@ -434,12 +371,10 @@ func TreeView(ctx *gin.Context, urlParts []string) {
 
 	// We're looking at the root of the project.  Show a list of files.
 	if treePath == "" {
-		entries := ConvertTreeEntries(tree.Entries)
-
 		ctx.HTML(http.StatusOK, "tree.html", makeTemplateContext(smithyConfig, gin.H{
 			"RepoName": repoName,
 			"RefName":  refNameString,
-			"Files":    entries,
+			"Files":    tree.Entries,
 			"Path":     treePath,
 		}))
 		return
@@ -459,14 +394,13 @@ func TreeView(ctx *gin.Context, urlParts []string) {
 			Http404(ctx)
 			return
 		}
-		entries := ConvertTreeEntries(subTree.Entries)
 		ctx.HTML(http.StatusOK, "tree.html", makeTemplateContext(smithyConfig, gin.H{
 			"RepoName":   repoName,
 			"ParentPath": parentPath,
 			"RefName":    refNameString,
 			"SubTree":    out.Name,
 			"Path":       treePath,
-			"Files":      entries,
+			"Files":      subTree.Entries,
 		}))
 		return
 	}
@@ -500,29 +434,15 @@ func TreeView(ctx *gin.Context, urlParts []string) {
 func LogView(ctx *gin.Context, urlParts []string) {
 	repoName := urlParts[0]
 	smithyConfig := ctx.MustGet("config").(SmithyConfig)
-	repoPath := filepath.Join(smithyConfig.Git.Root, repoName)
+	repo, exists := smithyConfig.FindRepo(repoName)
 
-	repoPathExists, err := PathExists(repoPath)
-
-	if err != nil {
-		Http404(ctx)
-		return
-	}
-
-	if !repoPathExists {
-		Http404(ctx)
-		return
-	}
-
-	r, err := git.PlainOpen(repoPath)
-
-	if err != nil {
+	if !exists {
 		Http404(ctx)
 		return
 	}
 
 	refNameString := urlParts[1]
-	revision, err := r.ResolveRevision(plumbing.Revision(refNameString))
+	revision, err := repo.Repository.ResolveRevision(plumbing.Revision(refNameString))
 
 	if err != nil {
 		Http404(ctx)
@@ -530,7 +450,7 @@ func LogView(ctx *gin.Context, urlParts []string) {
 	}
 
 	var commits []Commit
-	cIter, err := r.Log(&git.LogOptions{From: *revision, Order: git.LogOrderCommitterTime})
+	cIter, err := repo.Repository.Log(&git.LogOptions{From: *revision, Order: git.LogOrderCommitterTime})
 
 	if err != nil {
 		Http500(ctx)
@@ -564,7 +484,6 @@ func LogView(ctx *gin.Context, urlParts []string) {
 func LogViewDefault(ctx *gin.Context, urlParts []string) {
 	repoName := urlParts[0]
 	smithyConfig := ctx.MustGet("config").(SmithyConfig)
-
 	repo, exists := smithyConfig.FindRepo(repoName)
 
 	if !exists {
@@ -623,32 +542,14 @@ func PatchView(ctx *gin.Context, urlParts []string) {
 	const commitFormatDate = "Mon, 2 Jan 2006 15:04:05 -0700"
 	repoName := urlParts[0]
 	smithyConfig := ctx.MustGet("config").(SmithyConfig)
-	repoPath := filepath.Join(smithyConfig.Git.Root, repoName)
+	repo, exists := smithyConfig.FindRepo(repoName)
 
-	var (
-		patch string
-		err   error
-	)
-
-	repoPathExists, err := PathExists(repoPath)
-
-	if err != nil {
+	if !exists {
 		Http404(ctx)
 		return
 	}
 
-	if !repoPathExists {
-		Http404(ctx)
-		return
-	}
-
-	r, err := git.PlainOpen(repoPath)
-
-	if err != nil {
-		Http404(ctx)
-		return
-	}
-
+	var patch string
 	commitID := urlParts[1]
 	if commitID == "" {
 		Http404(ctx)
@@ -656,7 +557,7 @@ func PatchView(ctx *gin.Context, urlParts []string) {
 	}
 
 	commitHash := plumbing.NewHash(commitID)
-	commitObj, err := r.CommitObject(commitHash)
+	commitObj, err := repo.Repository.CommitObject(commitHash)
 
 	if err != nil {
 		Http404(ctx)
@@ -703,33 +604,20 @@ func PatchView(ctx *gin.Context, urlParts []string) {
 func CommitView(ctx *gin.Context, urlParts []string) {
 	repoName := urlParts[0]
 	smithyConfig := ctx.MustGet("config").(SmithyConfig)
-	repoPath := filepath.Join(smithyConfig.Git.Root, repoName)
+	repo, exists := smithyConfig.FindRepo(repoName)
 
-	repoPathExists, err := PathExists(repoPath)
-
-	if err != nil {
+	if !exists {
 		Http404(ctx)
 		return
 	}
 
-	if !repoPathExists {
-		Http404(ctx)
-		return
-	}
-
-	r, err := git.PlainOpen(repoPath)
-
-	if err != nil {
-		Http404(ctx)
-		return
-	}
 	commitID := urlParts[1]
 	if commitID == "" {
 		Http404(ctx)
 		return
 	}
 	commitHash := plumbing.NewHash(commitID)
-	commitObj, err := r.CommitObject(commitHash)
+	commitObj, err := repo.Repository.CommitObject(commitHash)
 
 	if err != nil {
 		Http404(ctx)

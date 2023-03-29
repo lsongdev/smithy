@@ -15,7 +15,7 @@
 <table class="table table-striped">
   {{ range .Branches }}
   <tr>
-    <td>{{ .Name.Short }}</td>
+    <td style="width: 50%;">{{ .Name.Short }}</td>
     <td><a href="/{{ $repo }}/log/{{ .Name.Short }}">log</a></td>
     <td><a href="/{{ $repo }}/tree/{{ .Name.Short }}">tree</a></td>
   </tr>
@@ -27,7 +27,7 @@
 <table class="table table-striped">
   {{ range .Tags }}
   <tr>
-    <td>{{ .Name.Short }}</td>
+    <td style="width: 50%;" >{{ .Name.Short }}</td>
     <td><a href="/{{ $repo }}/log/{{ .Name.Short }}">log</a></td>
     <td><a href="/{{ $repo }}/tree/{{ .Name.Short }}">tree</a></td>
   </tr>

@@ -20,7 +20,7 @@
 <ul>
   {{ range .Files }}
   <li>
-    <a data-mode="{{ .FileMode }}" href="/{{ $repo }}/tree/{{ $ref }}/{{ if $path }}{{ $path }}/{{ end }}{{ .Name }}">
+    <a href="/{{ $repo }}/tree/{{ $ref }}/{{ if $path }}{{ $path }}/{{ end }}{{ .Name }}">
       {{ .Name }}{{ if not .Mode.IsFile }}/{{ end }}
     </a>
   </li>
