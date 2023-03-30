@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"html/template"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"path/filepath"
@@ -26,8 +25,6 @@ import (
 	highlighting "github.com/yuin/goldmark-highlighting"
 
 	"embed"
-
-	"github.com/song940/gitgo/githttp"
 )
 
 //go:embed templates
@@ -172,6 +169,9 @@ func RenderSyntaxHighlighting(file *object.File) (string, error) {
 	)
 
 	iterator, err := lexer.Tokenise(nil, contents)
+	if err != nil {
+		return "", err
+	}
 
 	buf := bytes.NewBuffer(nil)
 	err = formatter.Format(buf, style, iterator)
@@ -184,17 +184,17 @@ func RenderSyntaxHighlighting(file *object.File) (string, error) {
 }
 
 func Http404(ctx *gin.Context) {
-	smithyConfig := ctx.MustGet("config").(SmithyConfig)
+	smithyConfig := ctx.MustGet("config").(Smithy)
 	ctx.HTML(http.StatusNotFound, "404.html", makeTemplateContext(smithyConfig, gin.H{}))
 }
 
 func Http500(ctx *gin.Context) {
-	smithyConfig := ctx.MustGet("config").(SmithyConfig)
+	smithyConfig := ctx.MustGet("config").(Smithy)
 	ctx.HTML(http.StatusInternalServerError, "500.html",
 		makeTemplateContext(smithyConfig, gin.H{}))
 }
 
-func makeTemplateContext(config SmithyConfig, extra gin.H) gin.H {
+func makeTemplateContext(config Smithy, extra gin.H) gin.H {
 	results := gin.H{
 		"Site": gin.H{
 			"Title":       config.Title,
@@ -209,7 +209,7 @@ func makeTemplateContext(config SmithyConfig, extra gin.H) gin.H {
 }
 
 func IndexView(ctx *gin.Context, urlParts []string) {
-	smithyConfig := ctx.MustGet("config").(SmithyConfig)
+	smithyConfig := ctx.MustGet("config").(Smithy)
 	repos := smithyConfig.GetRepositories()
 
 	ctx.HTML(http.StatusOK, "index.html", makeTemplateContext(smithyConfig, gin.H{
@@ -230,7 +230,7 @@ func findMainBranch(ctx *gin.Context, repo *git.Repository) (string, *plumbing.H
 
 func RepoIndexView(ctx *gin.Context, urlParts []string) {
 	repoName := urlParts[0]
-	smithyConfig := ctx.MustGet("config").(SmithyConfig)
+	smithyConfig := ctx.MustGet("config").(Smithy)
 	repo, exists := smithyConfig.FindRepo(repoName)
 
 	if !exists {
@@ -293,14 +293,14 @@ func RepoIndexView(ctx *gin.Context, urlParts []string) {
 }
 
 func RepoGitView(ctx *gin.Context, urlParts []string) {
-	smithyConfig := ctx.MustGet("config").(SmithyConfig)
-	git := githttp.New(smithyConfig.Git.Root)
-	git.ServeHTTP(ctx.Writer, ctx.Request)
+	// smithyConfig := ctx.MustGet("config").(Smithy)
+	// git := githttp.New(smithyConfig.Git.Root)
+	// git.ServeHTTP(ctx.Writer, ctx.Request)
 }
 
 func RefsView(ctx *gin.Context, urlParts []string) {
 	repoName := urlParts[0]
-	smithyConfig := ctx.MustGet("config").(SmithyConfig)
+	smithyConfig := ctx.MustGet("config").(Smithy)
 	repo, exists := smithyConfig.FindRepo(repoName)
 
 	if !exists {
@@ -328,7 +328,7 @@ func RefsView(ctx *gin.Context, urlParts []string) {
 
 func TreeView(ctx *gin.Context, urlParts []string) {
 	repoName := urlParts[0]
-	smithyConfig := ctx.MustGet("config").(SmithyConfig)
+	smithyConfig := ctx.MustGet("config").(Smithy)
 	repo, exists := smithyConfig.FindRepo(repoName)
 
 	if !exists {
@@ -438,7 +438,7 @@ func TreeView(ctx *gin.Context, urlParts []string) {
 
 func LogView(ctx *gin.Context, urlParts []string) {
 	repoName := urlParts[0]
-	smithyConfig := ctx.MustGet("config").(SmithyConfig)
+	smithyConfig := ctx.MustGet("config").(Smithy)
 	repo, exists := smithyConfig.FindRepo(repoName)
 	if !exists {
 		Http404(ctx)
@@ -485,7 +485,7 @@ func LogView(ctx *gin.Context, urlParts []string) {
 
 func LogViewDefault(ctx *gin.Context, urlParts []string) {
 	repoName := urlParts[0]
-	smithyConfig := ctx.MustGet("config").(SmithyConfig)
+	smithyConfig := ctx.MustGet("config").(Smithy)
 	repo, exists := smithyConfig.FindRepo(repoName)
 	if !exists {
 		Http404(ctx)
@@ -540,7 +540,7 @@ func FormatChanges(changes object.Changes) (string, error) {
 func PatchView(ctx *gin.Context, urlParts []string) {
 	const commitFormatDate = "Mon, 2 Jan 2006 15:04:05 -0700"
 	repoName := urlParts[0]
-	smithyConfig := ctx.MustGet("config").(SmithyConfig)
+	smithyConfig := ctx.MustGet("config").(Smithy)
 	repo, exists := smithyConfig.FindRepo(repoName)
 	if !exists {
 		Http404(ctx)
@@ -600,7 +600,7 @@ func PatchView(ctx *gin.Context, urlParts []string) {
 
 func CommitView(ctx *gin.Context, urlParts []string) {
 	repoName := urlParts[0]
-	smithyConfig := ctx.MustGet("config").(SmithyConfig)
+	smithyConfig := ctx.MustGet("config").(Smithy)
 	repo, exists := smithyConfig.FindRepo(repoName)
 	if !exists {
 		Http404(ctx)
@@ -639,7 +639,7 @@ func CommitView(ctx *gin.Context, urlParts []string) {
 }
 
 // Make the config available to every request
-func AddConfigMiddleware(cfg SmithyConfig) gin.HandlerFunc {
+func AddConfigMiddleware(cfg Smithy) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Set("config", cfg)
 	}
@@ -705,7 +705,6 @@ func Dispatch(ctx *gin.Context, routes []Route, fileSystemHandler http.Handler) 
 		if !route.Pattern.MatchString(urlPath) {
 			continue
 		}
-
 		urlParts := []string{}
 		for i, match := range route.Pattern.FindStringSubmatch(urlPath) {
 			if i != 0 {
@@ -715,15 +714,11 @@ func Dispatch(ctx *gin.Context, routes []Route, fileSystemHandler http.Handler) 
 
 		route.View(ctx, urlParts)
 		return
-
 	}
-
 	Http404(ctx)
-
 }
 
-func loadTemplates(smithyConfig SmithyConfig) (*template.Template, error) {
-
+func loadTemplates() (*template.Template, error) {
 	funcs := template.FuncMap{
 		// "css": func() string {
 		// 	return cssPath
@@ -743,7 +738,7 @@ func loadTemplates(smithyConfig SmithyConfig) (*template.Template, error) {
 		if err != nil {
 			return t, err
 		}
-		contents, err := ioutil.ReadAll(f)
+		contents, err := io.ReadAll(f)
 		if err != nil {
 			return t, err
 		}

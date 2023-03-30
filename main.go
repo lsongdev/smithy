@@ -33,24 +33,22 @@ func main() {
 	flag.StringVar(&root, "root", root, "repos root dir")
 	flag.Parse()
 
-	config := NewConfig()
-	config.Git.Root = root
-	app := gin.Default()
-	err := config.LoadAllRepositories()
-	templ, err := loadTemplates(config)
+	sc := NewSmithy()
+	sc.LoadAllRepositories(root)
+	templ, err := loadTemplates()
 	if err != nil {
 		log.Fatal("Failed to load templates:", err)
 		return
 	}
+	app := gin.Default()
 	app.SetHTMLTemplate(templ)
-	app.Use(AddConfigMiddleware(config))
+	app.Use(AddConfigMiddleware(sc))
 	routes := CompileRoutes()
 	app.Any("*path", func(ctx *gin.Context) {
 		Dispatch(ctx, routes, http.FileServer(http.FS(staticfiles)))
 	})
-	err = app.Run(":" + fmt.Sprint(config.Port))
+	err = app.Run(":" + fmt.Sprint(sc.Port))
 	if err != nil {
-		log.Fatal("ERROR:", err, config.Port)
+		log.Fatal("ERROR:", err, sc.Port)
 	}
-	return
 }

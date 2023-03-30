@@ -5,18 +5,12 @@
 {{ $ref := .RefName }}
 {{ $path := .Path }}
 
-<h2>~/projects/{{ $repo }}</h2>
-
-<nav>
-  <a class="nav-link" href="/{{ $repo }}">About</a>
-  <a class="nav-link" href="/{{ $repo }}/refs">Refs</a>
-  <a class="nav-link" href="/{{ $repo }}/log">Log</a>
-  <a class="nav-link" href="/{{ $repo }}/tree">Tree</a>
-</nav>
+{{ template "nav" . }}
 
 <h3>Files</h3>
 <p>Ref: {{ .RefName }}</p>
-<p>Path: <a href="/{{ $repo }}/tree/{{ $ref }}/{{ .ParentPath }}">{{ .ParentPath }}</a>/{{ $subtree}}</p>
+<p>Path: <a href="/{{ $repo }}/tree/{{ $ref }}/{{ .ParentPath }}">{{ .ParentPath }}</a>/<a href >{{ $subtree}}</a></p>
+
 <ul>
   {{ range .Files }}
   <li>

@@ -1,15 +1,6 @@
 {{ template "header" . }}
 
-{{ $repo := .RepoName }}
-
-<h2>~/projects/{{ $repo }}</h2>
-
-<nav>
-  <a class="nav-link" href="/{{ $repo }}">About</a>
-  <a class="nav-link" href="/{{ $repo }}/refs">Refs</a>
-  <a class="nav-link" href="/{{ $repo }}/log">Log</a>
-  <a class="nav-link" href="/{{ $repo }}/tree">Tree</a>
-</nav>
+{{ template "nav" . }}
 
 {{ $repo := .RepoName }}
 {{ $subtree := .SubTree }}
@@ -18,12 +9,12 @@
 <h3>Blob</h3>
 
 <p>Ref: {{ $ref }}</p>
-<p>Path: <a href="/{{ $repo }}/tree/{{ $ref }}/{{ .ParentPath }}">{{ .ParentPath }}</a>/{{ .File.Name }}</p>
+<p>Path: <a href="/{{ $repo }}/tree/{{ $ref }}/{{ .ParentPath }}">{{ .ParentPath }}</a>/<a href="" >{{ .File.Name }}</a></p>
 
 <hr>
 
-<div>
-  {{ .ContentsHighlighted }}
-</div>
+<pre>
+{{ .Contents }}
+</pre>
 
 {{ template "footer" }}
