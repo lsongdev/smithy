@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"html/template"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os/exec"
@@ -16,8 +15,6 @@ import (
 	"strings"
 
 	"github.com/alecthomas/chroma/formatters/html"
-	"github.com/alecthomas/chroma/lexers"
-	"github.com/alecthomas/chroma/styles"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -30,7 +27,15 @@ import (
 //go:embed templates
 var templatefiles embed.FS
 
-const PAGE_SIZE int = 500
+var (
+	offset        = 5
+	PAGE_SIZE int = 500
+)
+
+type GitCommand struct {
+	procInput *bytes.Reader
+	args      []string
+}
 
 type RepositoryWithName struct {
 	Name       string
@@ -105,12 +110,14 @@ func ListTags(r *git.Repository) ([]*plumbing.Reference, error) {
 
 func GetReadmeFromCommit(commit *object.Commit) (*object.File, error) {
 	options := []string{
-		"README.md",
-		"README",
-		"README.markdown",
-		"readme.md",
-		"readme.markdown",
 		"readme",
+		"README",
+		"readme.md",
+		"README.md",
+		"readme.txt",
+		"README.txt",
+		"readme.markdown",
+		"README.markdown",
 	}
 
 	for _, opt := range options {
@@ -140,54 +147,6 @@ func FormatMarkdown(input string) string {
 	return buf.String()
 }
 
-func RenderSyntaxHighlighting(file *object.File) (string, error) {
-	contents, err := file.Contents()
-	if err != nil {
-		return "", err
-	}
-	lexer := lexers.Match(file.Name)
-	if lexer == nil {
-		// If the lexer is nil, we weren't able to find one based on the file
-		// extension.  We can render it as plain text.
-		return fmt.Sprintf("<pre>%s</pre>", contents), nil
-	}
-
-	style := styles.Get("autumn")
-
-	if style == nil {
-		style = styles.Fallback
-	}
-
-	formatter := html.New(
-		html.WithClasses(true),
-		html.WithLineNumbers(true),
-		html.LineNumbersInTable(true),
-		html.LinkableLineNumbers(true, "L"),
-	)
-
-	iterator, err := lexer.Tokenise(nil, contents)
-	if err != nil {
-		return "", err
-	}
-
-	buf := bytes.NewBuffer(nil)
-	err = formatter.Format(buf, style, iterator)
-
-	if err != nil {
-		return fmt.Sprintf("<pre>%s</pre>", contents), nil
-	}
-
-	return buf.String(), nil
-}
-
-func Http404(ctx *gan.Context) {
-	ctx.Response().WithStatus(404).Text("Not Found")
-}
-
-func Http500(ctx *gan.Context) {
-	ctx.Response().WithStatus(500).Text("Error")
-}
-
 func (sc *Smithy) IndexView(ctx *gan.Context) {
 	repos := sc.GetRepositories()
 	sc.Render(ctx, "index", gan.H{
@@ -197,6 +156,11 @@ func (sc *Smithy) IndexView(ctx *gan.Context) {
 
 func findMainBranch(repo *git.Repository) (string, *plumbing.Hash, error) {
 	branches, _ := ListBranches(repo)
+
+	if len(branches) == 0 {
+		return "", nil, errors.New("no branches found")
+	}
+
 	var branch string
 	for _, br := range branches {
 		if br.Name().Short() == "main" || br.Name().Short() == "master" {
@@ -220,9 +184,17 @@ func (sc *Smithy) NewProject(ctx *gan.Context) {
 	repoPath := filepath.Join(sc.Root, repoName)
 	_, err := git.PlainInit(repoPath, true)
 	if err != nil {
-		Http500(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Status": 500,
+			"Error":  err.Error(),
+		})
 	}
 	ctx.Response().Text(repoName)
+}
+
+func (sc *Smithy) Reload(ctx *gan.Context) {
+	sc.LoadAllRepositories()
+	ctx.Response().Redirect("/", 302)
 }
 
 func (sc *Smithy) RepoGit(ctx *gan.Context) {
@@ -234,31 +206,42 @@ func (sc *Smithy) RepoView(ctx *gan.Context) {
 	repoName := ctx.GetParam("repo")
 	repo, exists := sc.FindRepo(repoName)
 	if !exists {
-		Http404(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Status": 404,
+			"Error":  "Repository not found",
+		})
 		return
 	}
 
 	branches, err := ListBranches(repo.Repository)
 	if err != nil {
-		Http500(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Error": err.Error(),
+		})
 		return
 	}
 
 	tags, err := ListTags(repo.Repository)
 	if err != nil {
-		Http500(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Error": err.Error(),
+		})
 		return
 	}
 
 	main, revision, err := findMainBranch(repo.Repository)
 	if err != nil {
-		Http500(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Error": err.Error(),
+		})
 		return
 	}
 	log.Printf(`%s default branch is "%s"`, repoName, main)
 	commitObj, err := repo.Repository.CommitObject(*revision)
 	if err != nil {
-		Http500(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Error": err.Error(),
+		})
 		return
 	}
 
@@ -288,7 +271,10 @@ func (sc *Smithy) RefsView(ctx *gan.Context) {
 	repoName := ctx.GetParam("repo")
 	repo, exists := sc.FindRepo(repoName)
 	if !exists {
-		Http404(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Status": 404,
+			"Error":  "Repository not found",
+		})
 		return
 	}
 
@@ -313,7 +299,10 @@ func (sc *Smithy) TreeView(ctx *gan.Context) {
 	repoName := ctx.GetParam("repo")
 	repo, exists := sc.FindRepo(repoName)
 	if !exists {
-		Http404(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Status": 404,
+			"Error":  "Repository not found",
+		})
 		return
 	}
 
@@ -323,14 +312,20 @@ func (sc *Smithy) TreeView(ctx *gan.Context) {
 		refNameString, _, err = findMainBranch(repo.Repository)
 		if err != nil {
 			ctx.Response().RenderError(err)
-			Http404(ctx)
+			sc.Render(ctx, "error", gan.H{
+				"Status": 404,
+				"Error":  "Repository not found",
+			})
 			return
 		}
 	}
 
 	revision, err := repo.Repository.ResolveRevision(plumbing.Revision(refNameString))
 	if err != nil {
-		Http404(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Status": 404,
+			"Error":  "Repository not found",
+		})
 		return
 	}
 
@@ -339,14 +334,20 @@ func (sc *Smithy) TreeView(ctx *gan.Context) {
 	commitObj, err := repo.Repository.CommitObject(*revision)
 
 	if err != nil {
-		Http404(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Status": 404,
+			"Error":  "Repository not found",
+		})
 		return
 	}
 
 	tree, err := commitObj.Tree()
 
 	if err != nil {
-		Http404(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Status": 404,
+			"Error":  "Repository not found",
+		})
 		return
 	}
 
@@ -363,7 +364,10 @@ func (sc *Smithy) TreeView(ctx *gan.Context) {
 
 	out, err := tree.FindEntry(treePath)
 	if err != nil {
-		Http404(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Status": 404,
+			"Error":  "Repository not found",
+		})
 		return
 	}
 
@@ -371,7 +375,10 @@ func (sc *Smithy) TreeView(ctx *gan.Context) {
 	if !out.Mode.IsFile() {
 		subTree, err := tree.Tree(treePath)
 		if err != nil {
-			Http404(ctx)
+			sc.Render(ctx, "error", gan.H{
+				"Status": 404,
+				"Error":  "Repository not found",
+			})
 			return
 		}
 
@@ -386,26 +393,29 @@ func (sc *Smithy) TreeView(ctx *gan.Context) {
 		return
 	}
 
-	// Now do a regular file
 	file, err := tree.File(treePath)
 	if err != nil {
-		Http404(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Status": 404,
+			"Error":  "Repository not found",
+		})
 		return
 	}
 	contents, err := file.Contents()
-	syntaxHighlighted, _ := RenderSyntaxHighlighting(file)
 	if err != nil {
-		Http404(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Status": 404,
+			"Error":  "Repository not found",
+		})
 		return
 	}
 	sc.Render(ctx, "blob", map[string]any{
-		"RepoName":            repoName,
-		"RefName":             refNameString,
-		"File":                out,
-		"ParentPath":          parentPath,
-		"Path":                treePath,
-		"Contents":            contents,
-		"ContentsHighlighted": template.HTML(syntaxHighlighted),
+		"RepoName":   repoName,
+		"RefName":    refNameString,
+		"File":       out,
+		"ParentPath": parentPath,
+		"Path":       treePath,
+		"Contents":   contents,
 	})
 }
 
@@ -413,7 +423,10 @@ func (sc *Smithy) LogView(ctx *gan.Context) {
 	repoName := ctx.GetParam("repo")
 	repo, exists := sc.FindRepo(repoName)
 	if !exists {
-		Http404(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Status": 404,
+			"Error":  "Repository not found",
+		})
 		return
 	}
 
@@ -422,7 +435,10 @@ func (sc *Smithy) LogView(ctx *gan.Context) {
 		defaultBranchName, _, err := findMainBranch(repo.Repository)
 		if err != nil {
 			ctx.Response().RenderError(err)
-			Http404(ctx)
+			sc.Render(ctx, "error", gan.H{
+				"Status": 404,
+				"Error":  "Repository not found",
+			})
 			return
 		}
 		path := ctx.Request().Path + "/" + defaultBranchName
@@ -432,14 +448,19 @@ func (sc *Smithy) LogView(ctx *gan.Context) {
 
 	revision, err := repo.Repository.ResolveRevision(plumbing.Revision(refName))
 	if err != nil {
-		Http404(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Status": 404,
+			"Error":  "Repository not found",
+		})
 		return
 	}
 
 	var commits []Commit
 	cIter, err := repo.Repository.Log(&git.LogOptions{From: *revision, Order: git.LogOrderCommitterTime})
 	if err != nil {
-		Http500(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Error": err.Error(),
+		})
 		return
 	}
 
@@ -493,31 +514,46 @@ func (sc *Smithy) CommitView(ctx *gan.Context) {
 
 	repo, exists := sc.FindRepo(repoName)
 	if !exists {
-		Http404(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Status": 404,
+			"Error":  "Repository not found",
+		})
 		return
 	}
 
 	commitID := ctx.GetParam("hash")
 	if commitID == "" {
-		Http404(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Status": 404,
+			"Error":  "Repository not found",
+		})
 		return
 	}
 	commitHash := plumbing.NewHash(commitID)
 	commitObj, err := repo.Repository.CommitObject(commitHash)
 	if err != nil {
-		Http404(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Status": 404,
+			"Error":  "Repository not found",
+		})
 		return
 	}
 
 	changes, err := GetChanges(commitObj)
 	if err != nil {
-		Http404(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Status": 404,
+			"Error":  "Repository not found",
+		})
 		return
 	}
 
 	formattedChanges, err := FormatChanges(changes)
 	if err != nil {
-		Http404(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Status": 404,
+			"Error":  "Repository not found",
+		})
 		return
 	}
 
@@ -557,42 +593,54 @@ func (sc *Smithy) PatchView(ctx *gan.Context) {
 	repoName := ctx.GetParam("repo")
 	repo, exists := sc.FindRepo(repoName)
 	if !exists {
-		Http404(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Status": 404,
+			"Error":  "Repository not found",
+		})
 		return
 	}
 
 	commitID := ctx.GetParam("hash")
 
 	if commitID == "" {
-		Http404(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Status": 404,
+			"Error":  "Repository not found",
+		})
 		return
 	}
 
 	commitHash := plumbing.NewHash(commitID)
 	commitObj, err := repo.Repository.CommitObject(commitHash)
 	if err != nil {
-		Http404(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Status": 404,
+			"Error":  "Repository not found",
+		})
 		return
 	}
 
-	// TODO: If this is the first commit, we can't build the diff (#281)
-	// Therefore, we have two options: either build the diff manually or
-	// patch go-git
 	var patch string
 	if commitObj.NumParents() == 0 {
-		Http500(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Error": err.Error(),
+		})
 		return
 	} else {
 		parentCommit, err := commitObj.Parent(0)
 
 		if err != nil {
-			Http500(ctx)
+			sc.Render(ctx, "error", gan.H{
+				"Error": err.Error(),
+			})
 			return
 		}
 
 		patchObj, err := parentCommit.Patch(commitObj)
 		if err != nil {
-			Http500(ctx)
+			sc.Render(ctx, "error", gan.H{
+				"Error": err.Error(),
+			})
 			return
 		}
 		patch = patchObj.String()
@@ -606,7 +654,9 @@ func (sc *Smithy) PatchView(ctx *gan.Context) {
 
 	stats, err := commitObj.Stats()
 	if err != nil {
-		Http500(ctx)
+		sc.Render(ctx, "error", gan.H{
+			"Error": err.Error(),
+		})
 		return
 	}
 
@@ -643,15 +693,6 @@ func loadTemplates() (*template.Template, error) {
 		}
 	}
 	return t, nil
-}
-
-var (
-	offset = 5
-)
-
-type GitCommand struct {
-	procInput *bytes.Reader
-	args      []string
 }
 
 func WriteGitToHttp(w http.ResponseWriter, gitCommand GitCommand) {
@@ -691,7 +732,6 @@ func (sc *Smithy) getInfoRefs(ctx *gan.Context) {
 	repoName := ctx.GetParam("repo")
 	repo, _ := sc.FindRepo(repoName)
 	repoPath := repo.Path + ""
-	// repoPath := "/tmp/repos/myapp"
 	log.Printf("getInfoRefs for %s", repoPath)
 	w := ctx.Response().GetRawResponse()
 	serviceName := getServiceName(ctx.Request())
@@ -710,7 +750,6 @@ func (sc *Smithy) uploadPack(ctx *gan.Context) {
 	repoName := ctx.GetParam("repo")
 	repo, _ := sc.FindRepo(repoName)
 	repoPath := repo.Path + ""
-	// repoPath := "/tmp/repos/myapp"
 	log.Printf("uploadPack for %s", repoPath)
 	r := ctx.Request().GetRawRequest()
 	w := ctx.Response().GetRawResponse()
@@ -736,8 +775,7 @@ func (sc *Smithy) receivePack(ctx *gan.Context) {
 	r := ctx.Request().GetRawRequest()
 	w := ctx.Response().GetRawResponse()
 	w.Header().Set("Content-Type", "application/x-git-receive-pack-result")
-
-	requestBody, err := ioutil.ReadAll(r.Body)
+	requestBody, err := io.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(404)
 		log.Fatal("Error:", err)

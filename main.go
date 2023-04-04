@@ -23,10 +23,10 @@ func main() {
 
 	t, _ := loadTemplates()
 	app.SetTemplate(t)
-
 	app.GET("/", sc.IndexView)
 	app.GET("/new", sc.NewProjectView)
 	app.POST("/new", sc.NewProject)
+	app.GET("/reload", sc.Reload)
 	app.GET("/:repo", sc.RepoView)
 
 	app.GET("/:repo/refs", sc.RefsView)
