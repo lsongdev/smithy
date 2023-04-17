@@ -1,0 +1,40 @@
+{{ template "header" . }}
+
+{{ $repo := .RepoName }}
+{{ $subtree := .SubTree }}
+{{ $ref := .RefName }}
+{{ $path := .Path }}
+
+{{ template "nav" . }}
+
+<h3>Files</h3>
+
+<dl>
+  <dt>ref</dt>
+  <dd>{{ .RefName }}</dd>
+
+  <dt>path</dt>
+  <dd><a href="/{{ $repo }}/tree/{{ $ref }}/{{ .ParentPath }}">{{ .ParentPath }}</a>/<a href>{{ $subtree}}</a></dd>
+</dl>
+
+<table class="table table-hover table-striped" >
+  <thead>
+    <tr>
+      <th>Mode</th>
+      <th>Name</th>
+      <!-- <th>Hash</th> -->
+    </tr>
+  </thead>
+  {{ range .Files }}
+  <tr>
+    <td>{{.Mode}}</td>
+    <td>
+      <a href="/{{ $repo }}/tree/{{ $ref }}/{{ if $path }}{{ $path }}/{{ end }}{{ .Name }}">{{ .Name }}{{ if not
+        .Mode.IsFile }}/{{ end }}</a>
+    </td>
+    <!-- <td>{{.Hash}}</td> -->
+  </tr>
+  {{ end }}
+</table>
+
+{{ template "footer" }}

@@ -1,0 +1,19 @@
+{{ define "nav" }}
+{{ $repo := .RepoName }}
+
+<div class="repository-info" >
+  <h2 class="repository-name">~/Projects/{{ $repo }}</h2>
+  <code class="repository-url">git clone https://code.lsong.org/{{ $repo }}</code>
+</div>
+
+<nav>
+  <a class="nav-link" href="/{{ $repo }}">About</a>
+  <a class="nav-link" href="/{{ $repo }}/refs">Refs</a>
+  <a class="nav-link" href="/{{ $repo }}/log">Log</a>
+  <a class="nav-link" href="/{{ $repo }}/tree">Tree</a>
+  {{ if  .Commit }}
+  <a class="nav-link" href="/{{ $repo }}/tree/{{ .Commit.Hash }}">Browse</a>
+  <a class="nav-link" href="/{{ $repo }}/patch/{{ .Commit.Hash }}">Patch</a>
+  {{end}}
+</nav>
+{{end}}

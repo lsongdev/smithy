@@ -1,0 +1,20 @@
+{{ template "header" . }}
+
+<h2>Create Project</h2>
+
+<nav>
+    <a href="/">Home</a>
+    <a href="/new">New</a>
+    <a href="/import">Import</a>
+</nav>
+
+<form class="form" method="post" action="/new">
+    <div class="form-field">
+        <label for="name">Project:</label>
+        <input class="input" name="name" type="text">
+    </div>
+    <div class="form-field">
+        <button class="button button-primary">create</button>
+    </div>
+</form>
+{{ template "footer" . }}

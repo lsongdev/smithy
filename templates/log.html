@@ -1,0 +1,33 @@
+{{ template "header" . }}
+
+{{ $repo := .RepoName }}
+
+{{ template "nav" . }}
+
+<h3>History</h3>
+
+<dl>
+  <dt>ref</dt>
+  <dd>{{ .RefName }}</dd>
+</dl>
+
+<table class="table table-hover table-striped">
+  <thead>
+    <th>Hash</th>
+    <th>Date</th>
+    <th class="text-nowrap">Commit message</th>
+    <th>Author</th>
+  </thead>
+  <tbody>
+    {{ range .Commits }}
+    <tr class="commit">
+      <td class="commit-id text-nowrap"><a href="/{{ $repo }}/commit/{{ .Commit.Hash }}">{{ .ShortHash }}</a></td>
+      <td class="commit-date text-nowrap">{{ .CommitDate }}</td>
+      <td class="commit-message text-wrap">{{ .Subject }}</td>
+      <td class="commit-author text-nowrap">{{ .Commit.Author.Name }}</td>
+    </tr>
+    {{ end }}
+  </tbody>
+</table>
+
+{{ template "footer" }}
