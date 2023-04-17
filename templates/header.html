@@ -1,0 +1,76 @@
+{{ define "header" }}
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <title>Liu Song’s Projects</title>
+  <meta name="description" content="{{ .Site.Description }}">
+  <meta name="author" content="Lsong">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="color-scheme" content="dark light">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Lsong’s Web">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:creator" content="@song940">
+  <link rel="icon" type="image/png" href="/icon.png">
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  <link rel="apple-touch-icon" sizes="128x128" type="image/png" href="/icon-x128.png">
+  <link rel="apple-touch-icon" sizes="512x512" type="image/png" href="/icon-x512.png">
+  <style>
+    @import "https://lsong.org/css/stylesheet.css";
+    @import "https://lsong.org/stylesheets/table.css";
+    @import "https://lsong.org/stylesheets/form.css";
+    @import "https://lsong.org/stylesheets/flex.css";
+    @import "https://lsong.org/stylesheets/button.css";
+
+    body {
+      font-family: monospace;
+    }
+
+    dt {
+      font-weight: bold;
+    }
+
+    th,
+    td {
+      padding: 0 0.4em;
+      vertical-align: top;
+    }
+
+    pre {
+      width: 100%;
+      overflow: auto;
+    }
+
+    .repository-info {
+      margin-bottom: 10px;
+    }
+
+    .repository-name {
+      margin-bottom: 3px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <header class="header">
+      <a class="heading" href="/">
+        <img width="18" src="https://lsong.org/icon.svg" alt="" class="logo">
+        <h1 class="title"><b>Liu Song’s </b>Projects</h1>
+      </a>
+      <nav id="navbar" class="nav nav-bar">
+        <a href="//lsong.org">home</a>
+        <a href="//lsong.org/posts">blog</a>
+        <a href="//lsong.org/books">books</a>
+        <a href="//lsong.org/music">music</a>
+        <a href="//lsong.org/apps.html">apps</a>
+        <x-inbox></x-inbox>
+      </nav>
+      <hr />
+    </header>
+    <main class="content">
+      {{ end }}

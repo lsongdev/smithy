@@ -1,0 +1,32 @@
+{{ template "header" . }}
+
+{{ $repo := .RepoName }}
+
+{{ template "nav" . }}
+
+<h3>Commit</h3>
+
+<dl>
+  <dt>Commit</dt>
+  <dd><a href="/{{ $repo }}/commit/{{ .Commit.Hash }}">{{ .Commit.Hash }}</a></dd>
+
+  <dt>Author</dt>
+  <dd>{{ .Commit.Author.Name }} &lt;<a href="mailto:{{ .Commit.Author.Email }}">{{ .Commit.Author.Email}}</a>&gt;</dd>
+
+  <dt>Date</dt>
+  <dd>{{ .Commit.Author.When }}</dd>
+
+  <dt>Diffstat</dt>
+  <dd><pre>{{ .Commit.Stats }}</pre></dd>
+</dl>
+
+<p>
+<pre>{{ .Commit.Message }}</pre>
+</p>
+
+<hr>
+<div>
+  <pre>{{ .Changes }}</pre>
+</div>
+
+{{ template "footer" }}

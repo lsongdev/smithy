@@ -1,0 +1,33 @@
+{{ template "header" . }}
+
+<h2>~/Projects</h2>
+
+<nav>
+  <a href="/">Home</a>
+  <a href="/new">New</a>
+  <a href="/import">Import</a>
+</nav>
+<hr>
+
+<table class="table table-hover" >
+  <thead>
+    <th>Name</th>
+    <th>Description</th>
+    <th>Owner</th>
+    <th>Last commit</th>
+  </thead>
+
+  {{range .Repos}}
+  <tr>
+    <td class="text-nowrap" ><a href="/{{ .Name }}">{{ .Name }}</a></td>
+    <!-- <td class="text-wrap" >revived minimalist port of Plan 9 userland to Unix</td> -->
+    <!-- <td class="text-nowrap">Song Liu &lt;hi@lsong.org&gt;</td> -->
+    <!-- <td class="text-nowrap">2019-09-11 22:46</td> -->
+  </tr>
+  {{ end }}
+
+</table>
+
+
+
+{{ template "footer" }}
