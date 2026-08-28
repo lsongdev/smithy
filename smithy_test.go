@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/go-git/go-git/v5"
@@ -25,6 +26,16 @@ func TestRepositoryPathRejectsTraversalAndInvalidNames(t *testing.T) {
 	}
 	if want := filepath.Join(sc.Root, "valid_repo.git"); got != want {
 		t.Fatalf("path = %q, want %q", got, want)
+	}
+}
+
+func TestFormatMarkdownDoesNotTrustRawHTML(t *testing.T) {
+	formatted, err := FormatMarkdown(`<script>alert("xss")</script>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(formatted), "<script>") {
+		t.Fatalf("raw HTML was preserved: %s", formatted)
 	}
 }
 

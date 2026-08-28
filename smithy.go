@@ -6,16 +6,17 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/alecthomas/chroma/formatters/html"
+	chromahtml "github.com/alecthomas/chroma/formatters/html"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -30,34 +31,31 @@ type RepositoryWithName struct {
 	Repository *git.Repository
 }
 
-type RepositoryByName []RepositoryWithName
+const (
+	maxBlobBytes         int64 = 2 << 20
+	maxReadmeBytes       int64 = 1 << 20
+	maxDiffInputBytes    int64 = 8 << 20
+	maxRenderedDiffBytes       = 4 << 20
+	defaultLogLimit            = 50
+	maxLogLimit                = 100
+)
 
-func (r RepositoryByName) Len() int      { return len(r) }
-func (r RepositoryByName) Swap(i, j int) { r[i], r[j] = r[j], r[i] }
-func (r RepositoryByName) Less(i, j int) bool {
-	res := strings.Compare(r[i].Name, r[j].Name)
-	return res < 0
-}
-
-type ReferenceByName []*plumbing.Reference
-
-func (r ReferenceByName) Len() int      { return len(r) }
-func (r ReferenceByName) Swap(i, j int) { r[i], r[j] = r[j], r[i] }
-func (r ReferenceByName) Less(i, j int) bool {
-	res := strings.Compare(r[i].Name().String(), r[j].Name().String())
-	return res < 0
-}
+var (
+	ErrContentTooLarge = errors.New("content is too large to display")
+	ErrNoBranches      = errors.New("no branches found")
+)
 
 type Smithy struct {
-	Root       string
-	WriteToken string
-	repos      atomic.Value
-	repoMu     sync.Mutex
-	template   *template.Template
+	Root          string
+	WriteToken    string
+	GitExecutable string
+	repos         atomic.Value
+	repoMu        sync.Mutex
+	template      *template.Template
 }
 
 func NewSmithy(root string) *Smithy {
-	sc := &Smithy{Root: filepath.Clean(root)}
+	sc := &Smithy{Root: filepath.Clean(root), GitExecutable: "git"}
 	sc.repos.Store(map[string]RepositoryWithName{})
 	return sc
 }
@@ -65,11 +63,7 @@ func NewSmithy(root string) *Smithy {
 func (sc *Smithy) AddRepository(rwn RepositoryWithName) {
 	sc.repoMu.Lock()
 	defer sc.repoMu.Unlock()
-	current := sc.repositorySnapshot()
-	next := make(map[string]RepositoryWithName, len(current)+1)
-	for name, repo := range current {
-		next[name] = repo
-	}
+	next := maps.Clone(sc.repositorySnapshot())
 	next[rwn.Name] = rwn
 	sc.repos.Store(next)
 }
@@ -109,7 +103,9 @@ func (sc *Smithy) GetRepositories() []RepositoryWithName {
 	for _, repo := range sc.repositorySnapshot() {
 		repos = append(repos, repo)
 	}
-	sort.Sort(RepositoryByName(repos))
+	slices.SortFunc(repos, func(a, b RepositoryWithName) int {
+		return strings.Compare(a.Name, b.Name)
+	})
 	return repos
 }
 
@@ -144,6 +140,7 @@ func (c *Commit) CommitDate() string {
 }
 
 func ReferenceCollector(it storer.ReferenceIter) ([]*plumbing.Reference, error) {
+	defer it.Close()
 	var refs []*plumbing.Reference
 
 	for {
@@ -159,7 +156,9 @@ func ReferenceCollector(it storer.ReferenceIter) ([]*plumbing.Reference, error) 
 
 		refs = append(refs, b)
 	}
-	sort.Sort(ReferenceByName(refs))
+	slices.SortFunc(refs, func(a, b *plumbing.Reference) int {
+		return strings.Compare(a.Name().String(), b.Name().String())
+	})
 	return refs, nil
 }
 
@@ -201,21 +200,21 @@ func GetReadmeFromCommit(commit *object.Commit) (*object.File, error) {
 	return nil, errors.New("no valid readme")
 }
 
-func FormatMarkdown(input string) string {
+func FormatMarkdown(input string) (template.HTML, error) {
 	var buf bytes.Buffer
 	markdown := goldmark.New(
 		goldmark.WithExtensions(
 			highlighting.NewHighlighting(
 				highlighting.WithFormatOptions(
-					html.WithClasses(true),
+					chromahtml.WithClasses(true),
 				),
 			),
 		),
 	)
 	if err := markdown.Convert([]byte(input), &buf); err != nil {
-		return input
+		return "", err
 	}
-	return buf.String()
+	return template.HTML(buf.String()), nil
 }
 
 func FindMainBranch(repo *git.Repository) (string, *plumbing.Hash, error) {
@@ -228,10 +227,13 @@ func FindMainBranch(repo *git.Repository) (string, *plumbing.Hash, error) {
 		}
 	}
 
-	branches, _ := ListBranches(repo)
+	branches, err := ListBranches(repo)
+	if err != nil {
+		return "", nil, err
+	}
 
 	if len(branches) == 0 {
-		return "", nil, errors.New("no branches found")
+		return "", nil, ErrNoBranches
 	}
 
 	var branch string
@@ -270,26 +272,59 @@ func GetChanges(commit *object.Commit) (object.Changes, error) {
 }
 
 // PatchHTML returns an HTML representation of a patch
-func PatchHTML(p object.Patch) string {
+func PatchHTML(p object.Patch) (string, error) {
 	buf := bytes.NewBuffer(nil)
 	ue := NewUnifiedEncoder(buf, DefaultContextLines)
-	err := ue.Encode(p)
-	if err != nil {
-		fmt.Println("PatchHTML error")
+	if err := ue.Encode(p); err != nil {
+		return "", err
 	}
-	return buf.String()
+	return buf.String(), nil
 }
 
 // FormatChanges spits out something similar to `git diff`
-func FormatChanges(changes object.Changes) (string, error) {
-	var s []string
+func FormatChanges(changes object.Changes) (template.HTML, error) {
+	if err := ensureChangesWithinLimit(changes, maxDiffInputBytes); err != nil {
+		return "", err
+	}
+
+	var buf strings.Builder
 	for _, change := range changes {
 		patch, err := change.Patch()
 		if err != nil {
 			return "", err
 		}
-		s = append(s, PatchHTML(*patch))
+		if buf.Len() > 0 {
+			buf.WriteString("\n\n\n\n")
+		}
+		html, err := PatchHTML(*patch)
+		if err != nil {
+			return "", err
+		}
+		buf.WriteString(html)
+		if buf.Len() > maxRenderedDiffBytes {
+			return "", ErrContentTooLarge
+		}
 	}
 
-	return strings.Join(s, "\n\n\n\n"), nil
+	return template.HTML(buf.String()), nil
+}
+
+func ensureChangesWithinLimit(changes object.Changes, limit int64) error {
+	var total int64
+	for _, change := range changes {
+		from, to, err := change.Files()
+		if err != nil {
+			return err
+		}
+		if from != nil {
+			total += from.Size
+		}
+		if to != nil {
+			total += to.Size
+		}
+		if total > limit {
+			return ErrContentTooLarge
+		}
+	}
+	return nil
 }

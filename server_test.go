@@ -1,9 +1,11 @@
 package main
 
 import (
+	"html/template"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/go-git/go-git/v5"
@@ -40,6 +42,29 @@ func TestTemplatesLoadWithQueryEscapingHelpers(t *testing.T) {
 	if err := sc.LoadTemplates(); err != nil {
 		t.Fatal(err)
 	}
+	response := httptest.NewRecorder()
+	sc.IndexView(response, httptest.NewRequest(http.MethodGet, "/", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if got := response.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Fatalf("Content-Type = %q", got)
+	}
+}
+
+func TestRenderDoesNotWritePartialTemplateOutput(t *testing.T) {
+	sc := NewSmithy(t.TempDir())
+	sc.template = template.Must(template.New("broken.html").Parse(`partial {{.Missing}}`))
+	response := httptest.NewRecorder()
+
+	sc.Render(response, "broken", struct{}{})
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusInternalServerError)
+	}
+	if strings.Contains(response.Body.String(), "partial") {
+		t.Fatalf("response contains partial template output: %q", response.Body.String())
+	}
 }
 
 func TestInfoRefsRejectsUnknownServiceBeforeStartingGit(t *testing.T) {
@@ -52,10 +77,30 @@ func TestInfoRefsRejectsUnknownServiceBeforeStartingGit(t *testing.T) {
 	sc.AddRepository(RepositoryWithName{Name: "repo.git", Path: repoPath, Repository: repo})
 
 	request := httptest.NewRequest(http.MethodGet, "/repo.git/info/refs?service=git-shell", nil)
-	request = request.WithContext(newContextWithParams(request.Context(), map[string]string{"repo": "repo.git"}))
+	request.SetPathValue("repo", "repo.git")
 	response := httptest.NewRecorder()
 	sc.getInfoRefs(response, request)
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusBadRequest)
+	}
+}
+
+func TestInfoRefsReturnsServerErrorWhenGitCannotStart(t *testing.T) {
+	sc := NewSmithy(t.TempDir())
+	sc.GitExecutable = filepath.Join(t.TempDir(), "missing-git")
+	repoPath := filepath.Join(sc.Root, "repo.git")
+	repo, err := git.PlainInit(repoPath, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc.AddRepository(RepositoryWithName{Name: "repo.git", Path: repoPath, Repository: repo})
+	request := httptest.NewRequest(http.MethodGet, "/repo.git/info/refs?service=git-upload-pack", nil)
+	request.SetPathValue("repo", "repo.git")
+	response := httptest.NewRecorder()
+
+	sc.getInfoRefs(response, request)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusInternalServerError)
 	}
 }

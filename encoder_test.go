@@ -49,7 +49,10 @@ func TestPatchHTMLEscapesRepositoryControlledContent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	html := PatchHTML(*patch)
+	html, err := PatchHTML(*patch)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if strings.Contains(html, "<img") || strings.Contains(html, "<script>") {
 		t.Fatalf("patch contains unescaped repository content: %s", html)
 	}

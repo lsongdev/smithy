@@ -26,7 +26,11 @@
 
 <hr>
 <div>
+  {{ if .DiffTooLarge }}
+  <p>Diff is too large to display.</p>
+  {{ else }}
   <pre>{{ .Changes }}</pre>
+  {{ end }}
 </div>
 
 {{ template "footer" }}

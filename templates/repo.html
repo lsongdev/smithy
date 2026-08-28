@@ -5,7 +5,11 @@
 {{ template "nav" . }}
 
 <div class="readme">
+  {{ if .ReadmeTooLarge }}
+  <p>README is too large to display.</p>
+  {{ else }}
   {{ .Readme }}
+  {{ end }}
 </div>
 
 {{ template "footer" }}

@@ -2,7 +2,6 @@
 
 
 {{ $repo := .RepoName }}
-{{ $subtree := .SubTree }}
 {{ $ref := .RefName }}
 
 {{ template "nav" . }}
@@ -20,7 +19,9 @@
 <hr>
 
 <pre>
+{{ if .TooLarge }}File is too large to display.{{ else }}
 {{ .Contents }}
+{{ end }}
 </pre>
 
 {{ template "footer" }}
