@@ -16,8 +16,8 @@
   {{ range .Branches }}
   <tr>
     <td style="width: 50%;">{{ .Name.Short }}</td>
-    <td><a href="/{{ $repo }}/log/{{ .Name.Short }}">log</a></td>
-    <td><a href="/{{ $repo }}/tree/{{ .Name.Short }}">tree</a></td>
+    <td><a href="/{{ $repo }}/log?ref={{ urlquery .Name.Short }}">log</a></td>
+    <td><a href="/{{ $repo }}/tree?ref={{ urlquery .Name.Short }}">tree</a></td>
   </tr>
   {{ end }}
 </table>
@@ -35,8 +35,8 @@
   {{ range .Tags }}
   <tr>
     <td style="width: 50%;" >{{ .Name.Short }}</td>
-    <td><a href="/{{ $repo }}/log/{{ .Name.Short }}">log</a></td>
-    <td><a href="/{{ $repo }}/tree/{{ .Name.Short }}">tree</a></td>
+    <td><a href="/{{ $repo }}/log?ref={{ urlquery .Name.Short }}">log</a></td>
+    <td><a href="/{{ $repo }}/tree?ref={{ urlquery .Name.Short }}">tree</a></td>
   </tr>
   {{ end }}
 </table>

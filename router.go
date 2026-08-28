@@ -5,6 +5,8 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"sort"
+	"strings"
 )
 
 type ParamsType string
@@ -19,6 +21,7 @@ func r(s string) *regexp.Regexp {
 }
 
 type Route struct {
+	method  string
 	pattern *regexp.Regexp
 	handler http.HandlerFunc
 }
@@ -37,10 +40,15 @@ func newContextWithParams(ctx context.Context, params map[string]string) context
 
 func (router *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Println(r.Method, r.URL.Path)
+	allowed := make(map[string]struct{})
 	for _, route := range router.routes {
 		re := route.pattern
 		match := re.FindStringSubmatch(r.URL.Path)
 		if len(match) > 0 {
+			allowed[route.method] = struct{}{}
+			if route.method != r.Method {
+				continue
+			}
 			// Extract parameter values from the URL
 			params := make(map[string]string)
 			for i, name := range re.SubexpNames() {
@@ -52,6 +60,16 @@ func (router *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			route.handler(w, r.WithContext(newContextWithParams(r.Context(), params)))
 			return
 		}
+	}
+	if len(allowed) > 0 {
+		methods := make([]string, 0, len(allowed))
+		for method := range allowed {
+			methods = append(methods, method)
+		}
+		sort.Strings(methods)
+		w.Header().Set("Allow", strings.Join(methods, ", "))
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
 	}
 	// No matching route found
 	http.NotFound(w, r)

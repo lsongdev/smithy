@@ -73,7 +73,7 @@ func (e *UnifiedEncoder) Encode(patch object.Patch) error {
 	sb := &strings.Builder{}
 
 	if message := patch.Message(); message != "" {
-		sb.WriteString(message)
+		sb.WriteString(esc(message))
 		if !strings.HasSuffix(message, "\n") {
 			sb.WriteByte('\n')
 		}
@@ -145,10 +145,10 @@ func (e *UnifiedEncoder) writeFilePatchHeader(sb *strings.Builder, filePatch dif
 		lines = e.appendPathLines(lines, "a/"+from.Path(), "/dev/null", isBinary)
 	}
 
-	sb.WriteString(lines[0])
+	sb.WriteString(esc(lines[0]))
 	for _, line := range lines[1:] {
 		sb.WriteByte('\n')
-		sb.WriteString(line)
+		sb.WriteString(esc(line))
 	}
 	sb.WriteByte('\n')
 }
@@ -336,7 +336,7 @@ func (h *hunk) writeTo(sb *strings.Builder) {
 
 	if h.ctxPrefix != "" {
 		sb.WriteByte(' ')
-		sb.WriteString(h.ctxPrefix)
+		sb.WriteString(esc(h.ctxPrefix))
 	}
 
 	sb.WriteByte('\n')

@@ -7,9 +7,12 @@ import (
 	"html/template"
 	"io"
 	"os"
-	"path"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/alecthomas/chroma/formatters/html"
@@ -46,29 +49,41 @@ func (r ReferenceByName) Less(i, j int) bool {
 }
 
 type Smithy struct {
-	Root     string
-	repos    map[string]RepositoryWithName
-	template *template.Template
+	Root       string
+	WriteToken string
+	repos      atomic.Value
+	repoMu     sync.Mutex
+	template   *template.Template
 }
 
-func NewSmithy(root string) Smithy {
-	return Smithy{
-		Root: root,
-	}
+func NewSmithy(root string) *Smithy {
+	sc := &Smithy{Root: filepath.Clean(root)}
+	sc.repos.Store(map[string]RepositoryWithName{})
+	return sc
 }
 
 func (sc *Smithy) AddRepository(rwn RepositoryWithName) {
-	sc.repos[rwn.Name] = rwn
+	sc.repoMu.Lock()
+	defer sc.repoMu.Unlock()
+	current := sc.repositorySnapshot()
+	next := make(map[string]RepositoryWithName, len(current)+1)
+	for name, repo := range current {
+		next[name] = repo
+	}
+	next[rwn.Name] = rwn
+	sc.repos.Store(next)
 }
 
 func (sc *Smithy) LoadAllRepositories() (err error) {
+	sc.repoMu.Lock()
+	defer sc.repoMu.Unlock()
 	files, err := os.ReadDir(sc.Root)
 	if err != nil {
 		return
 	}
-	sc.repos = make(map[string]RepositoryWithName)
+	repos := make(map[string]RepositoryWithName)
 	for _, f := range files {
-		repoPath := path.Join(sc.Root, f.Name())
+		repoPath := filepath.Join(sc.Root, f.Name())
 		r, err := git.PlainOpen(repoPath)
 		if err != nil {
 			continue
@@ -79,14 +94,19 @@ func (sc *Smithy) LoadAllRepositories() (err error) {
 			Repository: r,
 			Path:       repoPath,
 		}
-		sc.repos[key] = rwn
+		repos[key] = rwn
 	}
+	sc.repos.Store(repos)
 	return
+}
+
+func (sc *Smithy) repositorySnapshot() map[string]RepositoryWithName {
+	return sc.repos.Load().(map[string]RepositoryWithName)
 }
 
 func (sc *Smithy) GetRepositories() []RepositoryWithName {
 	var repos []RepositoryWithName
-	for _, repo := range sc.repos {
+	for _, repo := range sc.repositorySnapshot() {
 		repos = append(repos, repo)
 	}
 	sort.Sort(RepositoryByName(repos))
@@ -94,8 +114,23 @@ func (sc *Smithy) GetRepositories() []RepositoryWithName {
 }
 
 func (sc *Smithy) FindRepo(slug string) (RepositoryWithName, bool) {
-	value, exists := sc.repos[slug]
+	value, exists := sc.repositorySnapshot()[slug]
 	return value, exists
+}
+
+var validRepositoryName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
+func (sc *Smithy) RepositoryPath(name string) (string, error) {
+	if name == "" || name == "." || name == ".." || !validRepositoryName.MatchString(name) {
+		return "", fmt.Errorf("invalid repository name %q", name)
+	}
+
+	target := filepath.Join(sc.Root, name)
+	rel, err := filepath.Rel(sc.Root, target)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("repository path escapes root")
+	}
+	return target, nil
 }
 
 type Commit struct {
@@ -184,6 +219,15 @@ func FormatMarkdown(input string) string {
 }
 
 func FindMainBranch(repo *git.Repository) (string, *plumbing.Hash, error) {
+	head, err := repo.Reference(plumbing.HEAD, false)
+	if err == nil && head.Type() == plumbing.SymbolicReference && head.Target().IsBranch() {
+		branch := head.Target().Short()
+		revision, resolveErr := repo.ResolveRevision(plumbing.Revision(head.Target().String()))
+		if resolveErr == nil {
+			return branch, revision, nil
+		}
+	}
+
 	branches, _ := ListBranches(repo)
 
 	if len(branches) == 0 {

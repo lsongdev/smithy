@@ -1,13 +1,14 @@
 package main
 
 import (
-	"bytes"
+	"crypto/subtle"
 	"embed"
 	"fmt"
 	"html/template"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -25,7 +26,7 @@ var (
 var templatefiles embed.FS
 
 type GitCommand struct {
-	procInput *bytes.Reader
+	procInput io.Reader
 	args      []string
 }
 
@@ -76,8 +77,31 @@ func (sc *Smithy) Error(w http.ResponseWriter, code int, err error) {
 }
 
 func (sc *Smithy) Reload(w http.ResponseWriter, r *http.Request) {
-	sc.LoadAllRepositories()
+	if err := sc.LoadAllRepositories(); err != nil {
+		sc.Error(w, http.StatusInternalServerError, err)
+		return
+	}
 	fmt.Fprintf(w, "done")
+}
+
+func (sc *Smithy) RequireWriteAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if sc.WriteToken == "" {
+			http.Error(w, "write operations are disabled", http.StatusServiceUnavailable)
+			return
+		}
+
+		provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if _, password, ok := r.BasicAuth(); ok {
+			provided = password
+		}
+		if subtle.ConstantTimeCompare([]byte(provided), []byte(sc.WriteToken)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Basic realm="smithy"`)
+			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
+	}
 }
 
 func (sc *Smithy) IndexView(w http.ResponseWriter, r *http.Request) {
@@ -94,13 +118,22 @@ func (sc *Smithy) NewProject(w http.ResponseWriter, r *http.Request) {
 		sc.Render(w, "new", H{})
 		return
 	}
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		sc.Error(w, http.StatusBadRequest, err)
+		return
+	}
 	repoName := r.FormValue("name")
-	repoPath := filepath.Join(sc.Root, repoName)
-	_, err := git.PlainInit(repoPath, true)
+	repoPath, err := sc.RepositoryPath(repoName)
+	if err != nil {
+		sc.Error(w, http.StatusBadRequest, err)
+		return
+	}
+	repo, err := git.PlainInit(repoPath, true)
 	if err != nil {
 		sc.Error(w, http.StatusInternalServerError, err)
+		return
 	}
+	sc.AddRepository(RepositoryWithName{Name: repoName, Path: repoPath, Repository: repo})
 	fmt.Fprint(w, repoName)
 }
 
@@ -109,13 +142,20 @@ func (sc *Smithy) ImportProject(w http.ResponseWriter, r *http.Request) {
 		sc.Render(w, "import", H{})
 		return
 	}
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		sc.Error(w, http.StatusBadRequest, err)
+		return
+	}
 	name := r.FormValue("name")
 	bare := r.FormValue("bare")
 	address := r.FormValue("git")
-	repoPath := filepath.Join(sc.Root, name)
+	repoPath, err := sc.RepositoryPath(name)
+	if err != nil {
+		sc.Error(w, http.StatusBadRequest, err)
+		return
+	}
 	isBare := bare == "on"
-	repo, err := git.PlainClone(repoPath, isBare, &git.CloneOptions{
+	repo, err := git.PlainCloneContext(r.Context(), repoPath, isBare, &git.CloneOptions{
 		URL: address,
 	})
 	if err != nil {
@@ -128,7 +168,7 @@ func (sc *Smithy) ImportProject(w http.ResponseWriter, r *http.Request) {
 		Path:       repoPath,
 	}
 	sc.AddRepository(rwn)
-	sc.Reload(w, r)
+	fmt.Fprint(w, name)
 }
 
 func (sc *Smithy) RepoView(w http.ResponseWriter, r *http.Request) {
@@ -219,7 +259,10 @@ func (sc *Smithy) TreeView(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var err error
-	refName := sc.GetParam(r, "ref")
+	refName := r.URL.Query().Get("ref")
+	if refName == "" {
+		refName = sc.GetParam(r, "ref")
+	}
 	if refName == "" {
 		refName, _, err = FindMainBranch(repo.Repository)
 		if err != nil {
@@ -234,7 +277,10 @@ func (sc *Smithy) TreeView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	treePath := sc.GetParam(r, "path")
+	treePath := r.URL.Query().Get("path")
+	if treePath == "" {
+		treePath = sc.GetParam(r, "path")
+	}
 	parentPath := filepath.Dir(treePath)
 	commitObj, err := repo.Repository.CommitObject(*revision)
 	if err != nil {
@@ -311,14 +357,17 @@ func (sc *Smithy) LogView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	refName := sc.GetParam(r, "ref")
+	refName := r.URL.Query().Get("ref")
+	if refName == "" {
+		refName = sc.GetParam(r, "ref")
+	}
 	if refName == "" {
 		defaultBranchName, _, err := FindMainBranch(repo.Repository)
 		if err != nil {
 			sc.Error(w, http.StatusInternalServerError, err)
 			return
 		}
-		http.Redirect(w, r, fmt.Sprintf("/%s/log/%s", repoName, defaultBranchName), http.StatusFound)
+		http.Redirect(w, r, fmt.Sprintf("/%s/log?ref=%s", repoName, url.QueryEscape(defaultBranchName)), http.StatusFound)
 		return
 	}
 
@@ -452,62 +501,82 @@ func (sc *Smithy) PatchView(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "%s\n%s\n%s\n%s\n---\n%s\n%s", commitHashStr, from, date, subject, stats.String(), patch)
 }
 
-func (sc *Smithy) WriteGitToHttp(w http.ResponseWriter, gitCommand GitCommand) {
-	cmd := exec.Command("git", gitCommand.args...)
-	stdout, err := cmd.StdoutPipe()
+func (sc *Smithy) WriteGitToHTTP(w http.ResponseWriter, r *http.Request, gitCommand GitCommand) error {
+	cmd := exec.CommandContext(r.Context(), "git", gitCommand.args...)
 	log.Printf("WriteGitToHttp: %v", cmd)
-	if err != nil {
-		sc.Error(w, http.StatusInternalServerError, err)
-		return
-	}
-
 	if gitCommand.procInput != nil {
 		cmd.Stdin = gitCommand.procInput
 	}
-
-	if err := cmd.Start(); err != nil {
-		sc.Error(w, http.StatusInternalServerError, err)
-		return
+	cmd.Stdout = w
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git command failed: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
-	nbytes, err := io.Copy(w, stdout)
-	if err != nil {
-		sc.Error(w, http.StatusInternalServerError, fmt.Errorf("Error writing to socket: %v", err))
-	} else {
-		log.Printf("Bytes written: %d", nbytes)
-	}
+	return nil
 }
 
 func (sc *Smithy) getInfoRefs(w http.ResponseWriter, r *http.Request) {
 	repoName := sc.GetParam(r, "repo")
-	repo, _ := sc.FindRepo(repoName)
+	repo, exists := sc.FindRepo(repoName)
+	if !exists {
+		http.NotFound(w, r)
+		return
+	}
 	log.Printf("getInfoRefs for %s", repo.Path)
 	service := r.URL.Query().Get("service")
-	serviceName := strings.Replace(service, "git-", "", 1)
+	var serviceName string
+	switch service {
+	case "git-upload-pack":
+		serviceName = "upload-pack"
+	case "git-receive-pack":
+		sc.RequireWriteAuth(sc.getReceivePackInfoRefs)(w, r)
+		return
+	default:
+		http.Error(w, "unsupported git service", http.StatusBadRequest)
+		return
+	}
+	sc.writeInfoRefs(w, r, repo, service, serviceName)
+}
+
+func (sc *Smithy) getReceivePackInfoRefs(w http.ResponseWriter, r *http.Request) {
+	repo, exists := sc.FindRepo(sc.GetParam(r, "repo"))
+	if !exists {
+		http.NotFound(w, r)
+		return
+	}
+	sc.writeInfoRefs(w, r, repo, "git-receive-pack", "receive-pack")
+}
+
+func (sc *Smithy) writeInfoRefs(w http.ResponseWriter, r *http.Request, repo RepositoryWithName, service, serviceName string) {
 	w.Header().Set("Content-Type", "application/x-git-"+serviceName+"-advertisement")
-	str := "# service=git-" + serviceName
+	str := "# service=" + service
 	fmt.Fprintf(w, "%.4x%s\n", len(str)+offset, str)
 	fmt.Fprintf(w, "0000")
 	c := GitCommand{
 		args: []string{serviceName, "--stateless-rpc", "--advertise-refs", repo.Path},
 	}
-	sc.WriteGitToHttp(w, c)
+	if err := sc.WriteGitToHTTP(w, r, c); err != nil {
+		log.Printf("info refs failed: %v", err)
+	}
 }
 
 func (sc *Smithy) uploadPack(w http.ResponseWriter, r *http.Request) {
 	repoName := sc.GetParam(r, "repo")
-	repo, _ := sc.FindRepo(repoName)
-	log.Printf("uploadPack for %s", repo.Path)
-	w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
-	requestBody, err := io.ReadAll(r.Body)
-	if err != nil {
-		sc.Error(w, http.StatusInternalServerError, err)
+	repo, exists := sc.FindRepo(repoName)
+	if !exists {
+		http.NotFound(w, r)
 		return
 	}
+	log.Printf("uploadPack for %s", repo.Path)
+	w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
 	c := GitCommand{
-		procInput: bytes.NewReader(requestBody),
+		procInput: r.Body,
 		args:      []string{"upload-pack", "--stateless-rpc", repo.Path},
 	}
-	sc.WriteGitToHttp(w, c)
+	if err := sc.WriteGitToHTTP(w, r, c); err != nil {
+		log.Printf("upload-pack failed: %v", err)
+	}
 }
 
 func (sc *Smithy) receivePack(w http.ResponseWriter, r *http.Request) {
@@ -519,14 +588,11 @@ func (sc *Smithy) receivePack(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("receivePack for %s", repo.Path)
 	w.Header().Set("Content-Type", "application/x-git-receive-pack-result")
-	requestBody, err := io.ReadAll(r.Body)
-	if err != nil {
-		sc.Error(w, http.StatusInternalServerError, err)
-		return
-	}
 	c := GitCommand{
-		procInput: bytes.NewReader(requestBody),
+		procInput: r.Body,
 		args:      []string{"receive-pack", "--stateless-rpc", repo.Path},
 	}
-	sc.WriteGitToHttp(w, c)
+	if err := sc.WriteGitToHTTP(w, r, c); err != nil {
+		log.Printf("receive-pack failed: %v", err)
+	}
 }

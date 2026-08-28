@@ -14,7 +14,7 @@
   <dd>{{ .RefName }}</dd>
 
   <dt>path</dt>
-  <dd><a href="/{{ $repo }}/tree/{{ $ref }}/{{ .ParentPath }}">{{ .ParentPath }}</a>/<a href>{{ $subtree}}</a></dd>
+  <dd><a href="/{{ $repo }}/tree?ref={{ urlquery $ref }}&path={{ urlquery .ParentPath }}">{{ .ParentPath }}</a>/<a href>{{ $subtree}}</a></dd>
 </dl>
 
 <table class="table table-hover table-striped" >
@@ -29,7 +29,7 @@
   <tr>
     <td>{{.Mode}}</td>
     <td>
-      <a href="/{{ $repo }}/tree/{{ $ref }}/{{ if $path }}{{ $path }}/{{ end }}{{ .Name }}">{{ .Name }}{{ if not
+      <a href="/{{ $repo }}/tree?ref={{ urlquery $ref }}&path={{ if $path }}{{ urlquery $path }}%2F{{ end }}{{ urlquery .Name }}">{{ .Name }}{{ if not
         .Mode.IsFile }}/{{ end }}</a>
     </td>
     <!-- <td>{{.Hash}}</td> -->

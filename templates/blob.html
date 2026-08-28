@@ -11,10 +11,10 @@
 
 <dl>
   <dt>ref</dt>
-  <dd><a href="/{{ $repo }}/log/{{ $ref }}">{{ .RefName }}</a></dd>
+  <dd><a href="/{{ $repo }}/log?ref={{ urlquery $ref }}">{{ .RefName }}</a></dd>
 
   <dt>path</dt>
-  <dd><a href="/{{ $repo }}/tree/{{ $ref }}/{{ .ParentPath }}">{{ .ParentPath }}</a>/<a href="">{{ .File.Name }}</a></dd>
+  <dd><a href="/{{ $repo }}/tree?ref={{ urlquery $ref }}&path={{ urlquery .ParentPath }}">{{ .ParentPath }}</a>/<a href="">{{ .File.Name }}</a></dd>
 </dl>
 
 <hr>
