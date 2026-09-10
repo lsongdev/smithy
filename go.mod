@@ -1,4 +1,4 @@
-module github.com/song940/smithy
+module github.com/lsongdev/smithy
 
 go 1.25.0
 

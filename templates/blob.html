@@ -1,5 +1,4 @@
-{{ template "header" . }}
-
+{{ define "content" }}
 
 {{ $repo := .RepoName }}
 {{ $ref := .RefName }}
@@ -24,4 +23,4 @@
 {{ end }}
 </pre>
 
-{{ template "footer" }}
+{{ end }}

@@ -1,4 +1,4 @@
-{{ template "header" . }}
+{{ define "content" }}
 
 {{ $repo := .RepoName }}
 
@@ -34,4 +34,4 @@
 <p>Showing the first {{ .Limit }} commits. Increase <code>?limit=</code> up to 100.</p>
 {{ end }}
 
-{{ template "footer" }}
+{{ end }}

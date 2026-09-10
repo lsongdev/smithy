@@ -1,4 +1,4 @@
-{{ template "header" . }}
+{{ define "content" }}
 
 {{ $repo := .RepoName }}
 {{ $subtree := .SubTree }}
@@ -37,4 +37,4 @@
   {{ end }}
 </table>
 
-{{ template "footer" }}
+{{ end }}

@@ -5,6 +5,7 @@ import (
 	"embed"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"log/slog"
 	"net/http"
 
@@ -78,9 +79,25 @@ type errorPage struct {
 }
 
 func (sc *Smithy) LoadTemplates() error {
-	t, err := template.New("").Option("missingkey=error").ParseFS(templateFiles, "templates/*.html")
+	t, err := template.New("").Option("missingkey=error").ParseFS(templateFiles, "templates/layout.html")
 	if err != nil {
 		return err
+	}
+	files, err := fs.Glob(templateFiles, "templates/*.html")
+	if err != nil {
+		return err
+	}
+	for _, file := range files {
+		if file == "templates/layout.html" {
+			continue
+		}
+		data, err := fs.ReadFile(templateFiles, file)
+		if err != nil {
+			return err
+		}
+		if _, err := t.Parse(string(data)); err != nil {
+			return err
+		}
 	}
 	sc.template = t
 	return nil
@@ -110,13 +127,24 @@ func (sc *Smithy) render(w http.ResponseWriter, status int, name string, data an
 	if sc.template == nil {
 		return fmt.Errorf("templates are not loaded")
 	}
+	t, err := sc.template.Clone()
+	if err != nil {
+		return err
+	}
+	pageData, err := templateFiles.ReadFile("templates/" + name + ".html")
+	if err != nil {
+		return err
+	}
+	if _, err := t.Parse(string(pageData)); err != nil {
+		return err
+	}
 	var buf bytes.Buffer
-	if err := sc.template.ExecuteTemplate(&buf, name+".html", data); err != nil {
+	if err := t.ExecuteTemplate(&buf, "layout.html", data); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(status)
-	_, err := buf.WriteTo(w)
+	_, err = buf.WriteTo(w)
 	return err
 }
